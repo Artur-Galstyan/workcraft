@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.4
+    rev: v0.5.0
     hooks:
       - id: ruff
         args: [--fix]
@@ -9,5 +9,4 @@ repos:
     rev: v1.1.357
     hooks:
       - id: pyright
-        additional_dependencies:
-          [beartype, jax, jaxtyping, pytest, typing_extensions]
+        additional_dependencies: [beartype]

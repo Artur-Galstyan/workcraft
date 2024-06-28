@@ -1,14 +1,18 @@
 [project]
-name = "project-name"
+name = "workraft"
 version = "0.1.0"
-description = "your description"
+description = "A simple worker library in Python"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-authors = [{ name = "Your Name", email = "Your@email.com" }]
+authors = [{ name = "Artur A. Galstyan", email = "mail@arturgalstyan.dev" }]
 dependencies = [
     "beartype",
-    "typing_extensions",
+    "asyncpg",
+    "python-dotenv",
+    "pydantic",
+    "loguru",
+    "fire"
 ]
 [project.optional-dependencies]
 dev = ["pre-commit", "pytest", "mkdocs"]
@@ -30,9 +34,12 @@ lines-after-imports = 2
 order-by-type = false
 
 [tool.pyright]
-include = ["src", "tests"]
+include = ["workraft", "tests"]
 
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[project.scripts]
+workraft = "workraft.__main__:main"
