@@ -1,54 +1,36 @@
 import asyncio
+import importlib
 
 import fire
+from loguru import logger
 
-from workraft import peon, stronghold
-from workraft.db import get_db_config
-
-
-class Workraft:
-    """Workraft: A simple distributed task system."""
-
-    def stronghold(self):
-        """
-        Start the Stronghold.
-
-        The Stronghold is responsible for managing the task queue
-        and coordinating Peons.
-        It sets up the database and handles system-wide tasks.
-        """
-
-        db_config = get_db_config()
-        asyncio.run(stronghold.run_stronghold(db_config))
-
-    def peon(self):
-        """
-        Start a Peon.
-
-        Peons are worker units that fetch and execute tasks from the Stronghold.
-        Each Peon runs independently and communicates with the Stronghold via
-        the database.
-        """
-
-        db_config = get_db_config()
-        asyncio.run(peon.run_peon(db_config))
-
-    def zugzug(self):
-        """
-        Display information about Workraft.
-
-        This command provides an overview of available commands and their purposes.
-        """
-        print("Workraft: A simple distributed task system")
-        print("Commands:")
-        print("  stronghold - Start the Stronghold")
-        print("  peon - Start a Peon")
-        print("  zugzug - Display this information")
+from workraft import peon
+from workraft.db import get_connection, get_db_config, setup_database
 
 
-def main():
-    fire.Fire(Workraft)
+db_config = get_db_config()
+
+
+def import_workraft(path: str):
+    module_path, attr_name = path.rsplit(".", 1)
+    module = importlib.import_module(module_path)
+    return getattr(module, attr_name)
+
+
+class CLI:
+    @staticmethod
+    def peon(workraft_path: str):
+        logger.info(f"Getting Workraft object at {workraft_path}")
+        workraft_instance = import_workraft(workraft_path)
+
+        asyncio.run(peon.run_peon(db_config, workraft_instance))
+
+    @staticmethod
+    async def stronghold():
+        conn = await get_connection(db_config)
+        await setup_database(conn=conn)
+        logger.info("Stronghold is ready!")
 
 
 if __name__ == "__main__":
-    main()
+    fire.Fire(CLI)
