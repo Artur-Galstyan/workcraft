@@ -5,7 +5,7 @@ import fire
 from loguru import logger
 
 from workraft import peon
-from workraft.db import get_connection, get_db_config, setup_database
+from workraft.db import get_connection_pool, get_db_config, setup_database
 
 
 db_config = get_db_config()
@@ -22,13 +22,12 @@ class CLI:
     def peon(workraft_path: str):
         logger.info(f"Getting Workraft object at {workraft_path}")
         workraft_instance = import_workraft(workraft_path)
-
         asyncio.run(peon.run_peon(db_config, workraft_instance))
 
     @staticmethod
     async def stronghold():
-        conn = await get_connection(db_config)
-        await setup_database(conn=conn)
+        pool = await get_connection_pool(db_config)
+        await setup_database(pool)
         logger.info("Stronghold is ready!")
 
 
