@@ -24,7 +24,7 @@ def get_db_config() -> DBConfig:
     return DBConfig(host=host, port=int(port), user=user, password=pswd, database=name)
 
 
-async def get_connection(db_config: DBConfig) -> asyncpg.Connection:
+async def get_task_listener_conenction(db_config: DBConfig) -> asyncpg.Connection:
     try:
         conn = await asyncpg.connect(**db_config.model_dump())
         logger.info("Connected to the stronghold!")
@@ -34,31 +34,37 @@ async def get_connection(db_config: DBConfig) -> asyncpg.Connection:
         raise ValueError("Failed to connect to the stronghold!")
 
 
-async def listen_for_tasks(conn: asyncpg.Connection):
+async def get_connection_pool(db_config: DBConfig) -> asyncpg.Pool:
     try:
-        logger.info("Listening for new tasks...")
+        pool = await asyncpg.create_pool(**db_config.model_dump())
+        if pool is None:
+            raise ValueError("Failed to create connection pool.")
+        logger.info("Connected to the stronghold!")
+        return pool
     except Exception as e:
-        logger.error(f"Failed to listen for tasks: {e}")
-        raise ValueError("Failed to listen for tasks!")
+        logger.error(f"Failed to connect to the stronghold: {e}")
+        raise ValueError("Failed to connect to the stronghold!")
 
 
-async def send_heartbeat(conn: asyncpg.Connection, worker_id: str) -> None:
+async def send_heartbeat(pool: asyncpg.Pool, worker_id: str) -> None:
     try:
-        await conn.execute(
-            """
-            UPDATE warband SET last_heartbeat = NOW()
-            WHERE id = $1
-        """,
-            worker_id,
-        )
-        logger.debug("Drums of war beating... (Heartbeat sent)")
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE warband SET last_heartbeat = NOW()
+                WHERE id = $1
+            """,
+                worker_id,
+            )
+            logger.debug("Drums of war beating... (Heartbeat sent)")
     except Exception as e:
         logger.error(f"Heartbeat failed: {e}")
 
 
-async def setup_database(conn: asyncpg.Connection):
+async def setup_database(pool: asyncpg.Pool):
     try:
-        await conn.execute(SETUP)
+        async with pool.acquire() as conn:
+            await conn.execute(SETUP)
     except asyncpg.DuplicateObjectError as e:
         logger.warning(f"Some database objects already exist: {e}")
         # This is not a fatal error, so we can continue
@@ -67,22 +73,23 @@ async def setup_database(conn: asyncpg.Connection):
         raise
 
 
-async def verify_database_setup(conn: asyncpg.Connection):
+async def verify_database_setup(pool: asyncpg.Pool):
     try:
         # Check if tables exist
-        warband_exists = await conn.fetchval(
-            "SELECT EXISTS (SELECT FROM information_schema.tables "
-            "WHERE table_name = 'warband')"
-        )
-        bountyboard_exists = await conn.fetchval(
-            "SELECT EXISTS (SELECT FROM information_schema.tables "
-            "WHERE table_name = 'bountyboard')"
-        )
+        async with pool.acquire() as conn:
+            warband_exists = await conn.fetchval(
+                "SELECT EXISTS (SELECT FROM information_schema.tables "
+                "WHERE table_name = 'warband')"
+            )
+            bountyboard_exists = await conn.fetchval(
+                "SELECT EXISTS (SELECT FROM information_schema.tables "
+                "WHERE table_name = 'bountyboard')"
+            )
 
-        if not (warband_exists and bountyboard_exists):
-            raise Exception("Required tables do not exist in the database")
+            if not (warband_exists and bountyboard_exists):
+                raise Exception("Required tables do not exist in the database")
 
-        logger.info("Database setup verified successfully.")
+            logger.info("Database setup verified successfully.")
     except Exception as e:
         logger.error(f"Database verification failed: {e}")
         raise
