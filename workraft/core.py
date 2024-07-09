@@ -24,6 +24,13 @@ class Workraft:
 
         return decorator
 
+    def postrun_handler(self):
+        def decorator(func: Callable):
+            self.postrun_handler = func
+            return func
+
+        return decorator
+
 
 class WorkerStateSingleton:
     _worker_state: WorkerState = WorkerState(
