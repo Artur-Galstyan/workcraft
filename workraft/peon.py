@@ -118,5 +118,7 @@ async def notification_handler(pool, pid, channel, row_id, workraft):
         else:
             logger.info(f"Task {task_name} done!")
         finally:
+            if workraft.postrun_handler is not None:
+                workraft.postrun_handler()
             WorkerStateSingleton.update(status="idle", current_task=None)
             await update_worker_state_async(conn)
