@@ -1,13 +1,14 @@
-# workraft/peon.py
 import asyncio
 import json
 
 from asyncpg import Record
 from loguru import logger
 
+from workraft.core import WorkerStateSingleton
 from workraft.db import (
     get_connection_pool,
     get_task_listener_conenction,
+    update_worker_state_async,
     verify_database_setup,
 )
 
@@ -19,6 +20,8 @@ async def run_peon(db_config, workraft):
     listener_connection = await get_task_listener_conenction(db_config)
 
     async with pool.acquire() as conn:
+        WorkerStateSingleton.update(status="idle", current_task=None)
+        await update_worker_state_async(conn)
         await listener_connection.add_listener(
             "new_task",
             lambda conn, pid, channel, payload: asyncio.create_task(
@@ -26,7 +29,10 @@ async def run_peon(db_config, workraft):
             ),
         )
 
-    logger.info(f"Got {len(workraft.tasks)} tasks to do!")
+    logger.info("Tasks:")
+    for name, _ in workraft.tasks.items():
+        logger.info(f"- {name}")
+
     logger.info("Ready to work!")
 
     try:
@@ -65,12 +71,25 @@ async def notification_handler(pool, pid, channel, row_id, workraft):
             logger.warning(f"Task {row_id} is not pending!")
             return
 
+        WorkerStateSingleton.update(status="working", current_task=row_id)
+        await update_worker_state_async(conn)
+
         task_name, args = payload["name"], payload["args"]
         logger.info(f"Got task: {task_name} with args: {args}")
 
+        # set status of task to "RUNNING"
+        await conn.execute(
+            """
+                UPDATE bountyboard
+                SET status = 'RUNNING'
+                WHERE id = $1
+                """,
+            row_id,
+        )
+
         task = workraft.tasks.get(task_name)
         if task is None:
-            logger.warning(f"Task {task_name} not found!")
+            logger.error(f"Task {task_name} not found!")
             return
 
         try:
@@ -98,3 +117,6 @@ async def notification_handler(pool, pid, channel, row_id, workraft):
             )
         else:
             logger.info(f"Task {task_name} done!")
+        finally:
+            WorkerStateSingleton.update(status="idle", current_task=None)
+            await update_worker_state_async(conn)
