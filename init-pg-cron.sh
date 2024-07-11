@@ -5,5 +5,8 @@ set -e
 echo "shared_preload_libraries = 'pg_cron'" >> /var/lib/postgresql/data/postgresql.conf
 echo "cron.database_name = 'workraft'" >> /var/lib/postgresql/data/postgresql.conf
 
+# Add logging configurations
+echo "log_statement = 'all'" >> /var/lib/postgresql/data/postgresql.conf
+
 # Restart PostgreSQL to apply changes
 pg_ctl restart
