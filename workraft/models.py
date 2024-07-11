@@ -12,5 +12,5 @@ class DBConfig(BaseModel):
 
 class WorkerState(BaseModel):
     id: str
-    status: Literal["idle", "working", "offline"]
+    status: Literal["IDLE", "PREPARING" "WORKING", "OFFLINE"]
     current_task: Optional[str] = None

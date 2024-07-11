@@ -34,7 +34,7 @@ class Workraft:
 
 class WorkerStateSingleton:
     _worker_state: WorkerState = WorkerState(
-        id=str(uuid.uuid4()), status="idle", current_task=None
+        id=str(uuid.uuid4()), status="IDLE", current_task=None
     )
 
     @staticmethod

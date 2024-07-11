@@ -12,7 +12,8 @@ dependencies = [
     "python-dotenv",
     "pydantic",
     "loguru",
-    "fire"
+    "fire",
+    "tenacity"
 ]
 [project.optional-dependencies]
 dev = ["pre-commit", "pytest", "mkdocs"]
