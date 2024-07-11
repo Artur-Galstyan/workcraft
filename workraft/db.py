@@ -106,10 +106,7 @@ def send_heartbeat_sync(db_config: DBConfig, worker_id: str) -> None:
             conn = psycopg2.connect(**db_config.dict())
             with conn.cursor() as cur:
                 cur.execute(
-                    """
-                    UPDATE peon SET last_heartbeat = NOW()
-                    WHERE id = %s
-                """,
+                    "SELECT heartbeat(%s)",
                     (worker_id,),
                 )
                 conn.commit()
@@ -145,3 +142,26 @@ def update_worker_state_sync(db_config: DBConfig):
             ),
         )
         conn.commit()
+
+
+def refire_pending_tasks_periodically_sync(db_config: DBConfig, interval=10):
+    while True:
+        if WorkerStateSingleton.get().status != "IDLE":
+            logger.debug("Worker is not IDLE, skipping refire")
+            time.sleep(interval)
+            continue
+        try:
+            with psycopg2.connect(**db_config.dict()) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT send_refire_signal(%s)",
+                        (WorkerStateSingleton.get().id,),
+                    )
+                    result = cur.fetchone()[0]  # Get the integer result
+                    conn.commit()
+            logger.debug(
+                f"Refired pending tasks. Number of tasks notified: {result if result else 0}"
+            )
+        except Exception as e:
+            logger.error(f"Error refiring pending tasks: {e}")
+        time.sleep(interval)

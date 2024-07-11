@@ -16,6 +16,7 @@ from workraft.core import WorkerStateSingleton
 from workraft.db import (
     get_connection_pool,
     get_db_config,
+    refire_pending_tasks_periodically_sync,
     send_heartbeat_sync,
     setup_database,
     update_worker_state_sync,
@@ -28,14 +29,9 @@ db_config = get_db_config()
 def signal_handler(signum, frame):
     global shutdown_flag, db_config
     logger.info(f"Received signal {signum}. Initiating graceful shutdown...")
-    WorkerStateSingleton.update(status="offline")
+    WorkerStateSingleton.update(status="OFFLINE")
     update_worker_state_sync(db_config)
     sys.exit(0)
-
-
-def heartbeat_wrapper(db_config, worker_id):
-    while True:
-        send_heartbeat_sync(db_config, worker_id)
 
 
 def import_workraft(path: str):
@@ -57,15 +53,22 @@ class CLI:
 
         WorkerStateSingleton.update(id=worker_id)
         logger.info(f"Worker State: {WorkerStateSingleton.get()}")
-        peon_task = asyncio.create_task(peon.run_peon(db_config, workraft_instance))
+
         heartbeat_task = threading.Thread(
-            target=heartbeat_wrapper,
+            target=send_heartbeat_sync,
             args=(db_config, WorkerStateSingleton.get().id),
             daemon=True,
         )
         heartbeat_task.start()
 
-        await peon_task
+        refire_tasks = threading.Thread(
+            target=refire_pending_tasks_periodically_sync,
+            args=(db_config,),
+            daemon=True,
+        )
+        refire_tasks.start()
+
+        await peon.run_peon(db_config, workraft_instance)
 
     @staticmethod
     async def stronghold():
