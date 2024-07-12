@@ -73,8 +73,8 @@ class CLI:
             daemon=True,
         )
         refire_tasks.start()
-
-        await peon.run_peon(db_config, workraft_instance)
+        run_peon_task = asyncio.create_task(peon.run_peon(db_config, workraft_instance))
+        await asyncio.gather(run_peon_task, return_exceptions=True)
 
     @staticmethod
     async def stronghold():

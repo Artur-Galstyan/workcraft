@@ -18,7 +18,7 @@ class WorkerState(BaseModel):
 
 
 class TaskPayload(BaseModel):
-    task_name: str
+    name: str
     task_args: list = []
     task_kwargs: dict = {}
     prerun_handler_args: list = []
