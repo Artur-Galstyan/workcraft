@@ -9,7 +9,7 @@ from loguru import logger
 
 from workraft.core import WorkerState, WorkerStateSingleton
 from workraft.models import DBConfig
-from workraft.sql_commands import SETUP
+from workraft.sql_commands import get_all_sql_commands
 
 
 def get_db_config() -> DBConfig:
@@ -68,7 +68,12 @@ async def update_worker_state_async(conn):
 async def setup_database(pool: asyncpg.Pool):
     try:
         async with pool.acquire() as conn:
-            await conn.execute(SETUP)
+            all_sql_tasks = get_all_sql_commands()
+
+            for task, file_name in all_sql_tasks:
+                logger.debug(f"Executing task: {file_name}")
+                await conn.execute(task)
+
     except asyncpg.DuplicateObjectError as e:
         logger.warning(f"Some database objects already exist: {e}")
         # This is not a fatal error, so we can continue
@@ -128,17 +133,19 @@ def update_worker_state_sync(db_config: DBConfig):
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO peon (id, status, last_heartbeat, current_task)
-            VALUES (%s, %s, NOW(), %s)
+            INSERT INTO peon (id, status, last_heartbeat, current_task, queues)
+            VALUES (%s , %s, NOW(), %s, %s)
             ON CONFLICT (id) DO UPDATE
-            SET status = %s, last_heartbeat = NOW(), current_task = %s
+            SET status = %s, last_heartbeat = NOW(), current_task = %s, queues = %s
         """,
             (
                 worker_state.id,
                 worker_state.status,
                 worker_state.current_task,
+                worker_state.queues,
                 worker_state.status,
                 worker_state.current_task,
+                worker_state.queues,
             ),
         )
         conn.commit()

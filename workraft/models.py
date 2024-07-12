@@ -14,3 +14,14 @@ class WorkerState(BaseModel):
     id: str
     status: Literal["IDLE", "PREPARING" "WORKING", "OFFLINE"]
     current_task: Optional[str] = None
+    queues: list[str] = ["DEFAULT"]
+
+
+class TaskPayload(BaseModel):
+    task_name: str
+    task_args: list = []
+    task_kwargs: dict = {}
+    prerun_handler_args: list = []
+    prerun_handler_kwargs: dict = {}
+    postrun_handler_args: list = []
+    postrun_handler_kwargs: dict = {}

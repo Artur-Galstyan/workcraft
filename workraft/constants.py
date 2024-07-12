@@ -1,1 +1,2 @@
 NEW_TASK_CHANNEL = "new_task"
+TASK_QUEUE_SEPARATOR = "§"

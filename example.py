@@ -26,7 +26,7 @@ def postrun_handler():
 
 def get_random_number():
     logger.info("Getting random number...")
-    time.sleep(random.randint(10, 20))
+    time.sleep(random.randint(5, 10))
     return random.randint(1, 100)
 
 
@@ -42,21 +42,13 @@ def parallel_task():
 
 
 async def main():
-    pool = await get_connection_pool(db_config=get_db_config())
-    n_tasks = 10
-    async with pool.acquire() as conn:
-        for _ in range(n_tasks):
-            a = random.randint(1, 100)
-            b = random.randint(1, 100)
+    n_tasks = 5
 
-            await conn.execute(
-                """
-                    INSERT INTO bountyboard (id, status, payload)
-                    VALUES ($1, 'PENDING', $2)
-                    """,
-                uuid.uuid4(),
-                json.dumps({"name": "simple_task", "args": [a, b]}),
-            )
+    for _ in range(n_tasks):
+        a = random.randint(1, 100)
+        b = random.randint(1, 100)
+
+        await workraft.send_task_async("simple_task", [a, b], get_db_config())
 
         # await conn.execute(
         #     """
