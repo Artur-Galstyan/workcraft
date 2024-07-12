@@ -30,6 +30,7 @@ def signal_handler(signum, frame):
     global shutdown_flag, db_config
     logger.info(f"Received signal {signum}. Initiating graceful shutdown...")
     WorkerStateSingleton.update(status="OFFLINE")
+    logger.info(f"Latest worker state: {WorkerStateSingleton.get()}")
     update_worker_state_sync(db_config)
     sys.exit(0)
 
