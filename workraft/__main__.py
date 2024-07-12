@@ -42,7 +42,11 @@ def import_workraft(path: str):
 
 class CLI:
     @staticmethod
-    async def peon(workraft_path: str, worker_id: Optional[str] = None):
+    async def peon(
+        workraft_path: str,
+        worker_id: Optional[str] = None,
+        queues: list[str] = ["DEFAULT"],
+    ):
         global db_config, shutdown_flag
         for sig in (signal.SIGTERM, signal.SIGINT):
             signal.signal(sig, signal_handler)
@@ -51,7 +55,9 @@ class CLI:
         workraft_instance = import_workraft(workraft_path)
         worker_id = worker_id if worker_id is not None else str(uuid.uuid4())
 
-        WorkerStateSingleton.update(id=worker_id)
+        WorkerStateSingleton.update(id=worker_id, queues=queues)
+        update_worker_state_sync(db_config)
+
         logger.info(f"Worker State: {WorkerStateSingleton.get()}")
 
         heartbeat_task = threading.Thread(

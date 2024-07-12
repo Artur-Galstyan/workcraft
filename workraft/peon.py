@@ -12,14 +12,15 @@ from tenacity import (
     wait_exponential,
 )
 
-from workraft.constants import NEW_TASK_CHANNEL
-from workraft.core import WorkerStateSingleton
+from workraft.constants import NEW_TASK_CHANNEL, TASK_QUEUE_SEPARATOR
+from workraft.core import WorkerStateSingleton, Workraft
 from workraft.db import (
     get_connection_pool,
     get_task_listener_conenction,
     update_worker_state_async,
     verify_database_setup,
 )
+from workraft.models import TaskPayload
 
 
 class NoTaskAvailable(Exception):
@@ -79,10 +80,17 @@ async def get_next_task_with_retry(pool, worker_id):
         return task_id
 
 
-async def notification_handler(pool, row_id, channel, workraft):
-    logger.debug(f"Received notification: {row_id}, channel: {channel}")
+async def notification_handler(pool, data, channel, workraft: Workraft):
+    logger.debug(f"Received notification: {data}")
+    row_id, queue = data.split(TASK_QUEUE_SEPARATOR)
+    logger.debug(
+        f"Received notification: {row_id}, type: {type(row_id)}, channel: {channel}, queue: {queue}"
+    )
     if channel != NEW_TASK_CHANNEL and channel != WorkerStateSingleton.get().id:
         logger.debug(f"Ignoring notification from channel {channel}")
+        return
+    if queue not in WorkerStateSingleton.get().queues:
+        logger.debug(f"Ignoring notification from queue {queue}")
         return
     if WorkerStateSingleton.get().status != "IDLE":
         logger.debug(
@@ -94,7 +102,7 @@ async def notification_handler(pool, row_id, channel, workraft):
     async with pool.acquire() as conn:
         await update_worker_state_async(conn)
     logger.debug(f"Received notification: {row_id}")
-
+    result = None
     try:
         try:
             task_id = await get_next_task_with_retry(
@@ -120,7 +128,6 @@ async def notification_handler(pool, row_id, channel, workraft):
         WorkerStateSingleton.update(status="WORKING", current_task=task_id)
         async with pool.acquire() as conn:
             await update_worker_state_async(conn)
-
         async with pool.acquire() as conn:
             row: Optional[Record] = await conn.fetchrow(
                 """
@@ -137,17 +144,31 @@ async def notification_handler(pool, row_id, channel, workraft):
                 logger.error(f"Row {task_id} not found!")
                 return
 
-            payload = json.loads(row["payload"])
-            task_name, args = payload["name"], payload["args"]
-            logger.info(f"Got task: {task_name} with args: {args}")
+            payload = TaskPayload.model_validate(json.loads(row["payload"]))
+            logger.info(f"Got task: {payload.task_name}!")
 
-            task = workraft.tasks.get(task_name)
+            task = workraft.tasks.get(payload.task_name)
             if task is None:
-                logger.error(f"Task {task_name} not found!")
+                logger.error(f"Task {payload.task_name} not found!")
                 return
             try:
-                result = task(*args)
-                logger.info(f"Task {task_name} returned: {result}")
+                if workraft.prerun_handler_fn is not None:
+                    if asyncio.iscoroutinefunction(workraft.prerun_handler_fn):
+                        await workraft.prerun_handler_fn(
+                            *payload.prerun_handler_args,
+                            **payload.prerun_handler_kwargs,
+                        )
+                    else:
+                        workraft.prerun_handler_fn(
+                            *payload.prerun_handler_args,
+                            **payload.prerun_handler_kwargs,
+                        )
+
+                if asyncio.iscoroutinefunction(task):
+                    result = await task(*payload.task_args, **payload.task_kwargs)
+                else:
+                    result = task(*payload.task_args, **payload.task_kwargs)
+                logger.info(f"Task {payload.task_name} returned: {result}")
                 await conn.execute(
                     """
                         UPDATE bountyboard
@@ -158,7 +179,7 @@ async def notification_handler(pool, row_id, channel, workraft):
                     task_id,
                 )
             except Exception as e:
-                logger.error(f"Task {task_name} failed: {e}")
+                logger.error(f"Task {payload.task_name} failed: {e}")
                 await conn.execute(
                     """
                         UPDATE bountyboard
@@ -169,10 +190,26 @@ async def notification_handler(pool, row_id, channel, workraft):
                     task_id,
                 )
             else:
-                logger.info(f"Task {task_name} done!")
-    finally:
-        if workraft.postrun_handler is not None:
-            workraft.postrun_handler()
+                logger.info(f"Task {payload.task_name} done!")
+    except Exception as e:
+        logger.error(f"Task failed: {e}")
+        WorkerStateSingleton.update(status="IDLE", current_task=None)
+        async with pool.acquire() as conn:
+            await update_worker_state_async(conn)
+    else:
+        if workraft.postrun_handler_fn is not None:
+            if asyncio.iscoroutinefunction(workraft.postrun_handler_fn):
+                await workraft.postrun_handler_fn(
+                    result,
+                    *payload.postrun_handler_args,
+                    **payload.postrun_handler_kwargs,
+                )
+            else:
+                workraft.postrun_handler_fn(
+                    result,
+                    *payload.postrun_handler_args,
+                    **payload.postrun_handler_kwargs,
+                )
         WorkerStateSingleton.update(status="IDLE", current_task=None)
         async with pool.acquire() as conn:
             await update_worker_state_async(conn)
