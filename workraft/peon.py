@@ -81,6 +81,7 @@ async def get_next_task_with_retry(pool, worker_id):
         task_id = await conn.fetchval("SELECT get_next_task($1)", worker_id)
         if task_id is None:
             raise NoTaskAvailable("No task available in the queue")
+        task_id = str(task_id)
         return task_id
 
 
@@ -146,6 +147,7 @@ async def handle_task_acquisition_failure(pool: Pool, error: Exception) -> None:
 
 
 async def process_task(pool: Pool, task_id: str, workraft: Workraft) -> None:
+    print(task_id, type(task_id))
     WorkerStateSingleton.update(status="WORKING", current_task=task_id)
     async with pool.acquire() as conn:
         await update_worker_state_async(conn)
@@ -156,7 +158,7 @@ async def process_task(pool: Pool, task_id: str, workraft: Workraft) -> None:
             return
 
         payload = TaskPayload.model_validate(json.loads(task_row["payload"]))
-        logger.info(f"Got task: {payload.name}!")
+        logger.info(f"Got task: {payload.name} and payload: {payload}")
 
         task = workraft.tasks.get(payload.name)
         if task is None:
