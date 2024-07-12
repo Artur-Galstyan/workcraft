@@ -4,7 +4,7 @@ import uuid
 import asyncpg
 import beartype
 import psycopg2
-from beartype.typing import Callable, Literal, Optional
+from beartype.typing import Any, Callable, Literal, Optional
 from loguru import logger
 from pydantic import BaseModel
 
@@ -89,14 +89,14 @@ class Workraft:
     @beartype.beartype
     async def send_task_async(
         name: str,
-        task_args: list,
-        task_kwargs: dict,
         db_config: DBConfig,
+        task_args: list[Any] = [],
+        task_kwargs: dict[str, Any] = {},
         queue: str = "DEFAULT",
-        prerun_handler_args: list = [],
-        prerun_handler_kwargs: dict = {},
-        postrun_handler_args: list = [],
-        postrun_handler_kwargs: dict = {},
+        prerun_handler_args: list[Any] = [],
+        prerun_handler_kwargs: dict[str, Any] = {},
+        postrun_handler_args: list[Any] = [],
+        postrun_handler_kwargs: dict[str, Any] = {},
     ) -> None:
         pool = await asyncpg.create_pool(**db_config.model_dump())
         if not pool:

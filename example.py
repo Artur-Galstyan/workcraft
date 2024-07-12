@@ -48,7 +48,7 @@ async def main():
         a = random.randint(1, 100)
         b = random.randint(1, 100)
 
-        await workraft.send_task_async("simple_task", [a, b], get_db_config())
+        await workraft.send_task_async("simple_task", get_db_config(), [a, b])
 
         # await conn.execute(
         #     """
