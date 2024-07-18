@@ -31,7 +31,7 @@ def signal_handler(signum, frame):
     logger.info(f"Received signal {signum}. Initiating graceful shutdown...")
     WorkerStateSingleton.update(status="OFFLINE")
     logger.info(f"Latest worker state: {WorkerStateSingleton.get()}")
-    update_worker_state_sync(db_config)
+    update_worker_state_sync(db_config, WorkerStateSingleton.get())
     sys.exit(0)
 
 
@@ -57,8 +57,7 @@ class CLI:
         worker_id = worker_id if worker_id is not None else str(uuid.uuid4())
 
         WorkerStateSingleton.update(id=worker_id, queues=queues)
-        update_worker_state_sync(db_config)
-
+        update_worker_state_sync(db_config, WorkerStateSingleton.get())
         logger.info(f"Worker State: {WorkerStateSingleton.get()}")
 
         heartbeat_task = threading.Thread(
@@ -78,7 +77,7 @@ class CLI:
         await asyncio.gather(run_peon_task, return_exceptions=True)
 
     @staticmethod
-    async def stronghold():
+    async def build_stronghold():
         pool = await get_connection_pool(db_config)
         await setup_database(pool)
         logger.info("Stronghold is ready!")

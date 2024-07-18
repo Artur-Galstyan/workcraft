@@ -14,8 +14,16 @@ CREATE TABLE IF NOT EXISTS bountyboard (
     worker_id UUID REFERENCES peon(id),
     queue TEXT DEFAULT 'DEFAULT',
     payload JSONB,
-    result JSONB
+    result JSONB,
+    retry_on_failure BOOLEAN DEFAULT FALSE,
+    retry_count INT DEFAULT 0,
+    retry_limit INT NOT NULL DEFAULT 0 CHECK (retry_limit >= 0)
 );
+
+ALTER TABLE bountyboard
+    ADD CONSTRAINT retry_consistency CHECK (
+        (retry_on_failure = false) OR (retry_on_failure = true AND retry_limit > 1)
+    );
 
 CREATE TABLE IF NOT EXISTS task_queue (
     id SERIAL PRIMARY KEY,

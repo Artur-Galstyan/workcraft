@@ -15,13 +15,15 @@ workraft = Workraft()
 
 @workraft.task("simple_task")
 def simple_task(a: int, b: int, c: int) -> int:
-    time.sleep(random.randint(10, 20))
+    time.sleep(1)
+    #    time.sleep(random.randint(10, 20))
+    raise ValueError("Random error!")
     return a + b + c
 
 
 @workraft.postrun_handler()
-def postrun_handler(result):
-    logger.info(f"Postrun handler called! Got result: {result}")
+def postrun_handler(result, status):
+    logger.info(f"Postrun handler called! Got result: {result} and status {status}")
 
 
 def get_random_number():
@@ -42,7 +44,7 @@ def parallel_task():
 
 
 async def main():
-    n_tasks = 5
+    n_tasks = 1
 
     for _ in range(n_tasks):
         a = random.randint(1, 100)
@@ -50,7 +52,11 @@ async def main():
         c = random.randint(1, 100)
 
         await workraft.send_task_async(
-            "simple_task", get_db_config(), [a, b], task_kwargs={"c": c}
+            "simple_task",
+            get_db_config(),
+            [a, b],
+            task_kwargs={"c": c},
+            retry_on_failure=True,
         )
 
         # await conn.execute(
