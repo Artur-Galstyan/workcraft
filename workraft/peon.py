@@ -16,7 +16,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from workraft.constants import NEW_TASK_CHANNEL, TASK_QUEUE_SEPARATOR
+from workraft.constants import NEW_TASK_CHANNEL, TASK_QUEUE_SEPARATOR, TaskStatus
 from workraft.core import WorkerStateSingleton, Workraft
 from workraft.db import (
     get_connection_pool,
@@ -39,7 +39,7 @@ async def run_peon(db_config, workraft):
 
     async with pool.acquire() as conn:
         WorkerStateSingleton.update(status="IDLE", current_task=None)
-        await update_worker_state_async(conn)
+        await update_worker_state_async(conn, worker_state=WorkerStateSingleton.get())
         await listener_connection.add_listener(
             "new_task",
             lambda conn, pid, channel, payload: asyncio.create_task(
@@ -121,7 +121,7 @@ def should_process_notification(channel: str, queue: str) -> bool:
 async def process_notification(pool: Pool, row_id: str, workraft: Workraft) -> None:
     WorkerStateSingleton.update(status="PREPARING")
     async with pool.acquire() as conn:
-        await update_worker_state_async(conn)
+        await update_worker_state_async(conn, worker_state=WorkerStateSingleton.get())
 
     try:
         task_id = await get_next_task_with_retry(pool, WorkerStateSingleton.get().id)
@@ -143,29 +143,28 @@ async def handle_task_acquisition_failure(pool: Pool, error: Exception) -> None:
 
     WorkerStateSingleton.update(status="IDLE")
     async with pool.acquire() as conn:
-        await update_worker_state_async(conn)
+        await update_worker_state_async(conn, WorkerStateSingleton.get())
 
 
 async def process_task(pool: Pool, task_id: str, workraft: Workraft) -> None:
-    print(task_id, type(task_id))
     WorkerStateSingleton.update(status="WORKING", current_task=task_id)
     async with pool.acquire() as conn:
-        await update_worker_state_async(conn)
+        await update_worker_state_async(conn, WorkerStateSingleton.get())
         task_row = await get_task_row(conn, task_id)
 
-        if task_row is None:
-            logger.error(f"Row {task_id} not found!")
-            return
+    if task_row is None:
+        logger.error(f"Row {task_id} not found!")
+        return
 
-        payload = TaskPayload.model_validate(json.loads(task_row["payload"]))
-        logger.info(f"Got task: {payload.name} and payload: {payload}")
+    payload = TaskPayload.model_validate(json.loads(task_row["payload"]))
+    logger.info(f"Got task: {payload.name} and payload: {payload}")
 
-        task = workraft.tasks.get(payload.name)
-        if task is None:
-            logger.error(f"Task {payload.name} not found!")
-            return
+    task = workraft.tasks.get(payload.name)
+    if task is None:
+        logger.error(f"Task {payload.name} not found!")
+        return
 
-        await execute_task(conn, task_id, task, payload, workraft)
+    await execute_task(pool, task_id, task, payload, workraft)
 
 
 async def get_task_row(conn: Any, task_id: str) -> Optional[Record]:
@@ -181,7 +180,11 @@ async def get_task_row(conn: Any, task_id: str) -> Optional[Record]:
 
 
 async def execute_task(
-    conn: Any, task_id: str, task: Any, payload: TaskPayload, workraft: Workraft
+    pool: asyncpg.Pool,
+    task_id: str,
+    task: Any,
+    payload: TaskPayload,
+    workraft: Workraft,
 ) -> None:
     try:
         await execute_prerun_handler(workraft, payload)
@@ -189,22 +192,31 @@ async def execute_task(
         logger.error(f"Prerun handler failed: {e}, continuing...")
 
     result = None
+    status = TaskStatus.RUNNING
+    result = None
     try:
         result = await execute_main_task(task, payload)
         logger.info(f"Task {payload.name} returned: {result}")
-        await update_task_status(conn, task_id, "SUCCESS", json.dumps(result))
+        status = TaskStatus.SUCCESS
     except ValidationError as e:
         logger.error(f"Task {payload.name} failed: {e}: Invalid payload")
-        await update_task_status(conn, task_id, "FAILURE", str(e))
+        status = TaskStatus.FAILURE
+        result = str(e)
     except Exception as e:
         logger.error(f"Task {payload.name} failed: {e}")
-        await update_task_status(conn, task_id, "FAILURE", str(e))
+        status = TaskStatus.FAILURE
+        result = str(e)
     finally:
-        WorkerStateSingleton.update(status="IDLE", current_task=None)
-        await update_worker_state_async(conn)
+        logger.info(f"Task {payload.name} finished with status: {status}")
+        async with pool.acquire() as conn:
+            result = json.dumps(result)
+            await update_task_status(conn, task_id, status, result)
 
+        WorkerStateSingleton.update(status="IDLE", current_task=None)
+        async with pool.acquire() as conn:
+            await update_worker_state_async(conn, WorkerStateSingleton.get())
     try:
-        await execute_postrun_handler(workraft, payload, result)
+        await execute_postrun_handler(workraft, payload, result, status)
     except Exception as e:
         logger.error(f"Postrun handler failed: {e}")
 
@@ -226,12 +238,12 @@ async def execute_main_task(task: Any, payload: TaskPayload) -> Any:
 
 
 async def execute_postrun_handler(
-    workraft: Workraft, payload: TaskPayload, result: Any
+    workraft: Workraft, payload: TaskPayload, result: Any, status: TaskStatus
 ) -> None:
     if workraft.postrun_handler_fn is not None:
         await execute_handler(
             workraft.postrun_handler_fn,
-            [result] + payload.postrun_handler_args,
+            [result, status] + payload.postrun_handler_args,
             payload.postrun_handler_kwargs,
         )
 
@@ -243,14 +255,20 @@ async def execute_handler(handler: Any, args: list, kwargs: dict) -> None:
         handler(*args, **kwargs)
 
 
-async def update_task_status(conn: Any, task_id: str, status: str, result: str) -> None:
-    await conn.execute(
-        """
-        UPDATE bountyboard
-        SET status = $1, result = $2
-        WHERE id = $3
-        """,
-        status,
-        result,
-        task_id,
-    )
+async def update_task_status(
+    conn: Any, task_id: str, status: TaskStatus, result: Optional[Any]
+) -> None:
+    try:
+        res = await conn.execute(
+            """
+            UPDATE bountyboard
+            SET status = $1, result = $2
+            WHERE id = $3
+            """,
+            status.value,
+            result,
+            task_id,
+        )
+    except Exception as e:
+        logger.error(f"Failed to update task {task_id} status to {status}: {e}")
+        raise e

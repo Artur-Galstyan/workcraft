@@ -4,11 +4,29 @@ import uuid
 import asyncpg
 import beartype
 import psycopg2
-from beartype.typing import Any, Callable, Literal, Optional
+from beartype.typing import Any, Callable, Literal, Optional, Protocol
 from loguru import logger
 from pydantic import BaseModel
 
 from workraft.models import DBConfig, WorkerState
+
+
+class PostRunHandlerFn(Protocol):
+    def __call__(
+        self,
+        result: Any,
+        status: Literal["FAILURE", "SUCCESS", "RUNNING", "PENDING"],
+        *args,
+        **kwargs,
+    ): ...
+
+
+class PreRunHandlerFn(Protocol):
+    def __call__(
+        self,
+        *args,
+        **kwargs,
+    ): ...
 
 
 class Workraft:
@@ -27,14 +45,14 @@ class Workraft:
         return decorator
 
     def prerun_handler(self):
-        def decorator(func: Callable):
+        def decorator(func: PreRunHandlerFn):
             self.prerun_handler_fn = func
             return func
 
         return decorator
 
     def postrun_handler(self):
-        def decorator(func: Callable):
+        def decorator(func: PostRunHandlerFn):
             self.postrun_handler_fn = func
             return func
 
@@ -52,6 +70,8 @@ class Workraft:
         prerun_handler_kwargs: dict = {},
         postrun_handler_args: list = [],
         postrun_handler_kwargs: dict = {},
+        retry_on_failure: bool = False,
+        retry_limit: int = 3,
     ) -> None:
         logger.info(f"Sending task {name} to queue {queue} with id {id}")
         conn = None
@@ -60,8 +80,8 @@ class Workraft:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO bountyboard (id, status, payload, queue)
-                    VALUES (%s, 'PENDING', %s, %s)
+                    INSERT INTO bountyboard (id, status, payload, queue, retry_on_failure, retry_limit)
+                    VALUES (%s, 'PENDING', %s, %s, %s, %s)
                     """,
                     (
                         str(uuid.uuid4()),
@@ -75,6 +95,8 @@ class Workraft:
                             "postrun_handler_kwargs": postrun_handler_kwargs,
                         },
                         queue,
+                        retry_on_failure,
+                        retry_limit,
                     ),
                 )
                 conn.commit()
@@ -97,6 +119,8 @@ class Workraft:
         prerun_handler_kwargs: dict[str, Any] = {},
         postrun_handler_args: list[Any] = [],
         postrun_handler_kwargs: dict[str, Any] = {},
+        retry_on_failure: bool = False,
+        retry_limit: int = 3,
     ) -> None:
         pool = await asyncpg.create_pool(**db_config.model_dump())
         if not pool:
@@ -105,8 +129,8 @@ class Workraft:
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                        INSERT INTO bountyboard (id, status, payload, queue)
-                        VALUES ($1, 'PENDING', $2, $3)
+                        INSERT INTO bountyboard (id, status, payload, queue, retry_on_failure, retry_limit)
+                        VALUES ($1, 'PENDING', $2, $3, $4, $5)
                         """,
                 uuid.uuid4(),
                 json.dumps(
@@ -121,6 +145,8 @@ class Workraft:
                     }
                 ),
                 queue,
+                retry_on_failure,
+                retry_limit,
             )
 
 

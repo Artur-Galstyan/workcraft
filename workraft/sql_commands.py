@@ -73,6 +73,11 @@ def get_setup_db_create_send_refire_signal_function():
     return read_file_from_sqls(file_name), file_name
 
 
+def get_setup_db_create_reopen_task_function():
+    file_name = "create_reopen_task_function.sql"
+    return read_file_from_sqls(file_name), file_name
+
+
 def get_all_sql_commands() -> list[tuple[str, str]]:
     return [
         get_setup_enum_types(),
@@ -87,5 +92,6 @@ def get_all_sql_commands() -> list[tuple[str, str]]:
         get_setup_db_create_check_dead_workers_function(),
         get_setup_db_create_self_correct_tasks_function(),
         get_setup_db_create_send_refire_signal_function(),
+        get_setup_db_create_reopen_task_function(),
         get_setup_db_setup_cron_jobs(),
     ]

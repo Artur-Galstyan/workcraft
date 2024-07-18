@@ -9,6 +9,7 @@ from loguru import logger
 
 from workraft.core import WorkerState, WorkerStateSingleton
 from workraft.models import DBConfig
+from workraft.settings import settings
 from workraft.sql_commands import get_all_sql_commands
 
 
@@ -50,8 +51,7 @@ async def get_connection_pool(db_config: DBConfig) -> asyncpg.Pool:
         raise ValueError("Failed to connect to the stronghold!")
 
 
-async def update_worker_state_async(conn):
-    worker_state = WorkerStateSingleton.get()
+async def update_worker_state_async(conn, worker_state: WorkerState):
     await conn.execute(
         """
         INSERT INTO peon (id, status, last_heartbeat, current_task)
@@ -118,7 +118,7 @@ def send_heartbeat_sync(db_config: DBConfig, worker_id: str) -> None:
             # logger.debug(
             #     f"Drums of war beating... (Heartbeat sent), worker_id: {worker_id}"
             # )
-            time.sleep(5)
+            time.sleep(settings.db_polling_interval)
         except Exception as e:
             logger.error(f"Heartbeat failed: {e}")
         finally:
@@ -126,8 +126,7 @@ def send_heartbeat_sync(db_config: DBConfig, worker_id: str) -> None:
                 conn.close()
 
 
-def update_worker_state_sync(db_config: DBConfig):
-    worker_state = WorkerStateSingleton.get()
+def update_worker_state_sync(db_config: DBConfig, worker_state: WorkerState):
     conn = psycopg2.connect(**db_config.dict())
 
     with conn.cursor() as cur:
@@ -151,7 +150,9 @@ def update_worker_state_sync(db_config: DBConfig):
         conn.commit()
 
 
-def refire_pending_tasks_periodically_sync(db_config: DBConfig, interval=10):
+def refire_pending_tasks_periodically_sync(
+    db_config: DBConfig, interval=settings.db_refire_interval
+):
     while True:
         if WorkerStateSingleton.get().status != "IDLE":
             logger.debug("Worker is not IDLE, skipping refire")
