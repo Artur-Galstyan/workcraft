@@ -72,7 +72,8 @@ class Workraft:
         postrun_handler_kwargs: dict = {},
         retry_on_failure: bool = False,
         retry_limit: int = 3,
-    ) -> None:
+    ) -> str:
+        id = str(uuid.uuid4())
         logger.info(f"Sending task {name} to queue {queue} with id {id}")
         conn = None
         try:
@@ -83,7 +84,7 @@ class Workraft:
     INSERT INTO bountyboard (id, status, payload, queue, retry_on_failure, retry_limit)
     VALUES ($1, 'PENDING', $2, $3, $4, $5)
                                 """,
-                    uuid.uuid4(),
+                    id,
                     json.dumps(
                         {
                             "name": name,
@@ -106,6 +107,7 @@ class Workraft:
         finally:
             if conn:
                 conn.close()
+        return id
 
     @staticmethod
     @beartype.beartype
@@ -121,7 +123,8 @@ class Workraft:
         postrun_handler_kwargs: dict[str, Any] = {},
         retry_on_failure: bool = False,
         retry_limit: int = 3,
-    ) -> None:
+    ) -> str:
+        id = str(uuid.uuid4())
         pool = await asyncpg.create_pool(**db_config.model_dump())
         if not pool:
             raise Exception("Failed to create connection pool")
@@ -131,7 +134,7 @@ class Workraft:
 INSERT INTO bountyboard (id, status, payload, queue, retry_on_failure, retry_limit)
 VALUES ($1, 'PENDING', $2, $3, $4, $5)
                 """,
-                uuid.uuid4(),
+                id,
                 json.dumps(
                     {
                         "name": name,
@@ -147,6 +150,7 @@ VALUES ($1, 'PENDING', $2, $3, $4, $5)
                 retry_on_failure,
                 retry_limit,
             )
+        return id
 
 
 class WorkerStateSingleton:
