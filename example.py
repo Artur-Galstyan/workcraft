@@ -1,13 +1,11 @@
 import asyncio
-import json
 import random
 import time
-import uuid
 from multiprocessing import Pool
 
 from loguru import logger
 from workraft.core import Workraft
-from workraft.db import get_connection_pool, get_db_config
+from workraft.db import get_db_config
 
 
 workraft = Workraft()
@@ -37,7 +35,7 @@ def parallel_task():
     num_processes = 8
     n_random_numbers = 20
     with Pool(processes=num_processes) as pool:
-        all_numbers = pool.starmap(
+        pool.starmap(
             get_random_number,
             [() for _ in range(n_random_numbers)],
         )

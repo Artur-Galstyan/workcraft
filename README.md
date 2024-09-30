@@ -1,7 +1,7 @@
 # Workraft
 
 ## Description
-Workraft is a lightweight, simple worker library in Python with only a Postgres database
+Workraft is a lightweight, _highly opionated_, simple worker library in Python with only a Postgres database
 as the single source of truth; no Redis, RabbitMQ, or any other external dependencies.
 
 ## Installation

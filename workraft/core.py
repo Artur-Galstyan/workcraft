@@ -6,7 +6,6 @@ import beartype
 import psycopg2
 from beartype.typing import Any, Callable, Literal, Optional, Protocol
 from loguru import logger
-from pydantic import BaseModel
 
 from workraft.models import DBConfig, WorkerState
 
@@ -80,8 +79,8 @@ class Workraft:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO bountyboard (id, status, payload, queue, retry_on_failure, retry_limit)
-                    VALUES (%s, 'PENDING', %s, %s, %s, %s)
+INSERT INTO bountyboard (id, status, payload, queue, retry_on_failure, retry_limit)
+VALUES (%s, 'PENDING', %s, %s, %s, %s)
                     """,
                     (
                         str(uuid.uuid4()),
@@ -125,13 +124,12 @@ class Workraft:
         pool = await asyncpg.create_pool(**db_config.model_dump())
         if not pool:
             raise Exception("Failed to create connection pool")
-        n_tasks = 5
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                        INSERT INTO bountyboard (id, status, payload, queue, retry_on_failure, retry_limit)
-                        VALUES ($1, 'PENDING', $2, $3, $4, $5)
-                        """,
+INSERT INTO bountyboard (id, status, payload, queue, retry_on_failure, retry_limit)
+VALUES ($1, 'PENDING', $2, $3, $4, $5)
+                """,
                 uuid.uuid4(),
                 json.dumps(
                     {

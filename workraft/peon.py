@@ -2,7 +2,6 @@ import asyncio
 import json
 
 import asyncpg
-import tenacity
 from asyncpg import Record
 from asyncpg.pool import Pool
 from beartype.typing import Any, Optional
@@ -138,7 +137,9 @@ async def handle_task_acquisition_failure(pool: Pool, error: Exception) -> None:
         logger.info("No task available. Returning to IDLE state.")
     elif isinstance(error, RetryError):
         logger.error(
-            "Failed to acquire task after 3 attempts. The task queue may be empty or the task may have been taken by another worker."
+            "Failed to acquire task after 3 attempts. "
+            "The task queue may be empty "
+            "or the task may have been taken by another worker."
         )
 
     WorkerStateSingleton.update(status="IDLE")
@@ -259,7 +260,7 @@ async def update_task_status(
     conn: Any, task_id: str, status: TaskStatus, result: Optional[Any]
 ) -> None:
     try:
-        res = await conn.execute(
+        await conn.execute(
             """
             UPDATE bountyboard
             SET status = $1, result = $2

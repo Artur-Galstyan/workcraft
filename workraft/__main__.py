@@ -1,7 +1,5 @@
 import asyncio
-import functools
 import importlib
-import os
 import signal
 import sys
 import threading
@@ -21,6 +19,7 @@ from workraft.db import (
     setup_database,
     update_worker_state_sync,
 )
+from workraft.utils import run_command
 
 
 db_config = get_db_config()
@@ -81,6 +80,12 @@ class CLI:
         pool = await get_connection_pool(db_config)
         await setup_database(pool)
         logger.info("Stronghold is ready!")
+
+    @staticmethod
+    def start_docker_database(debug: bool = True):
+        run_command("bash renew_workraft_db.sh", debug=debug)
+        logger.info("Zug zug. The database is now running in a Docker container.")
+        logger.info("Run python -m workraft build_stronghold to setup the database.")
 
 
 if __name__ == "__main__":

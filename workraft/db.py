@@ -1,4 +1,3 @@
-import asyncio
 import os
 import time
 
@@ -115,9 +114,9 @@ def send_heartbeat_sync(db_config: DBConfig, worker_id: str) -> None:
                     (worker_id,),
                 )
                 conn.commit()
-            # logger.debug(
-            #     f"Drums of war beating... (Heartbeat sent), worker_id: {worker_id}"
-            # )
+            logger.debug(
+                f"Drums of war beating... (Heartbeat sent), worker_id: {worker_id}"
+            )
             time.sleep(settings.db_polling_interval)
         except Exception as e:
             logger.error(f"Heartbeat failed: {e}")
@@ -165,10 +164,10 @@ def refire_pending_tasks_periodically_sync(
                         "SELECT send_refire_signal(%s)",
                         (WorkerStateSingleton.get().id,),
                     )
-                    result = cur.fetchone()[0]  # Get the integer result
+                    res = cur.fetchone()[0]  # Get the integer res
                     conn.commit()
             logger.debug(
-                f"Refired pending tasks. Number of tasks notified: {result if result else 0}"
+                f"Refired pending tasks. Number of tasks notified: {res if res else 0}"
             )
         except Exception as e:
             logger.error(f"Error refiring pending tasks: {e}")

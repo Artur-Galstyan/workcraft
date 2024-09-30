@@ -13,7 +13,8 @@ dependencies = [
     "pydantic",
     "loguru",
     "fire",
-    "tenacity"
+    "tenacity",
+    "psycopg2>=2.9.9",
 ]
 [project.optional-dependencies]
 dev = ["pre-commit", "pytest", "mkdocs"]
@@ -24,7 +25,7 @@ src = []
 
 [tool.ruff.lint]
 fixable = ["I001", "F401"]
-ignore = ["E402", "E721", "E731", "E741", "F722"]
+ignore = ["E402", "E721", "E731", "E741", "F722", "F821"]
 ignore-init-module-imports = true
 select = ["E", "F", "I001"]
 
@@ -36,7 +37,6 @@ order-by-type = false
 
 [tool.pyright]
 include = ["workraft", "tests"]
-
 
 [build-system]
 requires = ["hatchling"]
