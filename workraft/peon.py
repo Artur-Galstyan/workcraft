@@ -223,13 +223,12 @@ async def execute_task(
 
 
 async def execute_prerun_handler(
-    workraft: Workraft, task_id, payload: TaskPayload
+    workraft: Workraft, task_id: str, payload: TaskPayload
 ) -> None:
     if workraft.prerun_handler_fn is not None:
         await execute_handler(
             workraft.prerun_handler_fn,
-            task_id,
-            payload.prerun_handler_args,
+            [task_id, payload.name] + payload.prerun_handler_args,
             payload.prerun_handler_kwargs,
         )
 
@@ -251,17 +250,16 @@ async def execute_postrun_handler(
     if workraft.postrun_handler_fn is not None:
         await execute_handler(
             workraft.postrun_handler_fn,
-            task_id,
-            [result, status] + payload.postrun_handler_args,
+            [task_id, payload.name, result, status] + payload.postrun_handler_args,
             payload.postrun_handler_kwargs,
         )
 
 
-async def execute_handler(handler: Any, task_id: str, args: list, kwargs: dict) -> None:
+async def execute_handler(handler: Any, args: list, kwargs: dict) -> None:
     if asyncio.iscoroutinefunction(handler):
-        await handler(task_id=task_id, *args, **kwargs)
+        await handler(*args, **kwargs)
     else:
-        handler(task_id=task_id, *args, **kwargs)
+        handler(*args, **kwargs)
 
 
 async def update_task_status(

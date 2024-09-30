@@ -14,6 +14,7 @@ class PostRunHandlerFn(Protocol):
     def __call__(
         self,
         task_id: str,
+        task_name: str,
         result: Any,
         status: Literal["FAILURE", "SUCCESS", "RUNNING", "PENDING"],
         *args,

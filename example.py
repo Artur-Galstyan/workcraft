@@ -20,8 +20,10 @@ def simple_task(a: int, b: int, c: int) -> int:
 
 
 @workraft.postrun_handler()
-def postrun_handler(task_id, result, status):
-    logger.info(f"Postrun handler called! Got result: {result} and status {status}")
+def postrun_handler(task_id, task_name, result, status):
+    logger.info(
+        f"Postrun handler called for {task_id} and {task_name}! Got result: {result} and status {status}"
+    )
 
 
 def get_random_number():
