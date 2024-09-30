@@ -250,7 +250,8 @@ async def execute_postrun_handler(
     if workraft.postrun_handler_fn is not None:
         await execute_handler(
             workraft.postrun_handler_fn,
-            [task_id, payload.name, result, status] + payload.postrun_handler_args,
+            [task_id, payload.name, result, status.value]
+            + payload.postrun_handler_args,
             payload.postrun_handler_kwargs,
         )
 
