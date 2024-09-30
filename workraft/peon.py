@@ -188,7 +188,7 @@ async def execute_task(
     workraft: Workraft,
 ) -> None:
     try:
-        await execute_prerun_handler(workraft, payload)
+        await execute_prerun_handler(workraft, task_id, payload)
     except Exception as e:
         logger.error(f"Prerun handler failed: {e}, continuing...")
 
@@ -217,15 +217,18 @@ async def execute_task(
         async with pool.acquire() as conn:
             await update_worker_state_async(conn, WorkerStateSingleton.get())
     try:
-        await execute_postrun_handler(workraft, payload, result, status)
+        await execute_postrun_handler(workraft, task_id, payload, result, status)
     except Exception as e:
         logger.error(f"Postrun handler failed: {e}")
 
 
-async def execute_prerun_handler(workraft: Workraft, payload: TaskPayload) -> None:
+async def execute_prerun_handler(
+    workraft: Workraft, task_id, payload: TaskPayload
+) -> None:
     if workraft.prerun_handler_fn is not None:
         await execute_handler(
             workraft.prerun_handler_fn,
+            task_id,
             payload.prerun_handler_args,
             payload.prerun_handler_kwargs,
         )
@@ -239,21 +242,26 @@ async def execute_main_task(task: Any, payload: TaskPayload) -> Any:
 
 
 async def execute_postrun_handler(
-    workraft: Workraft, payload: TaskPayload, result: Any, status: TaskStatus
+    workraft: Workraft,
+    task_id: str,
+    payload: TaskPayload,
+    result: Any,
+    status: TaskStatus,
 ) -> None:
     if workraft.postrun_handler_fn is not None:
         await execute_handler(
             workraft.postrun_handler_fn,
+            task_id,
             [result, status] + payload.postrun_handler_args,
             payload.postrun_handler_kwargs,
         )
 
 
-async def execute_handler(handler: Any, args: list, kwargs: dict) -> None:
+async def execute_handler(handler: Any, task_id: str, args: list, kwargs: dict) -> None:
     if asyncio.iscoroutinefunction(handler):
-        await handler(*args, **kwargs)
+        await handler(task_id=task_id, *args, **kwargs)
     else:
-        handler(*args, **kwargs)
+        handler(task_id=task_id, *args, **kwargs)
 
 
 async def update_task_status(

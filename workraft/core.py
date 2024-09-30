@@ -13,6 +13,7 @@ from workraft.models import DBConfig, WorkerState
 class PostRunHandlerFn(Protocol):
     def __call__(
         self,
+        task_id: str,
         result: Any,
         status: Literal["FAILURE", "SUCCESS", "RUNNING", "PENDING"],
         *args,
@@ -79,11 +80,11 @@ class Workraft:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-INSERT INTO bountyboard (id, status, payload, queue, retry_on_failure, retry_limit)
-VALUES (%s, 'PENDING', %s, %s, %s, %s)
-                    """,
-                    (
-                        str(uuid.uuid4()),
+    INSERT INTO bountyboard (id, status, payload, queue, retry_on_failure, retry_limit)
+    VALUES ($1, 'PENDING', $2, $3, $4, $5)
+                                """,
+                    uuid.uuid4(),
+                    json.dumps(
                         {
                             "name": name,
                             "task_args": task_args,
@@ -92,11 +93,11 @@ VALUES (%s, 'PENDING', %s, %s, %s, %s)
                             "prerun_handler_kwargs": prerun_handler_kwargs,
                             "postrun_handler_args": postrun_handler_args,
                             "postrun_handler_kwargs": postrun_handler_kwargs,
-                        },
-                        queue,
-                        retry_on_failure,
-                        retry_limit,
+                        }
                     ),
+                    queue,
+                    retry_on_failure,
+                    retry_limit,
                 )
                 conn.commit()
         except Exception as e:

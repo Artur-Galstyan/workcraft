@@ -20,7 +20,7 @@ def simple_task(a: int, b: int, c: int) -> int:
 
 
 @workraft.postrun_handler()
-def postrun_handler(result, status):
+def postrun_handler(task_id, result, status):
     logger.info(f"Postrun handler called! Got result: {result} and status {status}")
 
 
