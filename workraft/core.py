@@ -10,6 +10,10 @@ from loguru import logger
 from workraft.models import DBConfig, WorkerState
 
 
+class SetupHandlerFn(Protocol):
+    def __call__(self): ...
+
+
 class PostRunHandlerFn(Protocol):
     def __call__(
         self,
@@ -35,6 +39,7 @@ class Workraft:
 
     def __init__(self):
         self.tasks: dict[str, Callable] = {}
+        self.setup_handler_fn: Optional[Callable] = None
         self.prerun_handler_fn: Optional[Callable] = None
         self.postrun_handler_fn: Optional[Callable] = None
 
@@ -55,6 +60,13 @@ class Workraft:
     def postrun_handler(self):
         def decorator(func: PostRunHandlerFn):
             self.postrun_handler_fn = func
+            return func
+
+        return decorator
+
+    def setup_handler(self):
+        def decorator(func: SetupHandlerFn):
+            self.setup_handler_fn = func
             return func
 
         return decorator

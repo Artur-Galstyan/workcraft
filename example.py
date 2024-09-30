@@ -10,12 +10,23 @@ from workraft.db import get_db_config
 
 workraft = Workraft()
 
+global_counter = 0
+
+
+@workraft.setup_handler()
+def setup_handler():
+    global global_counter
+    global_counter = 1000
+    logger.info("Setting up the worker!")
+
 
 @workraft.task("simple_task")
 def simple_task(a: int, b: int, c: int) -> int:
+    global global_counter
+    global_counter += 1
     time.sleep(1)
-    #    time.sleep(random.randint(10, 20))
-    raise ValueError("Random error!")
+    logger.info(global_counter)
+    # raise ValueError("Random error!")
     return a + b + c
 
 

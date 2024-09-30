@@ -10,7 +10,7 @@ from beartype.typing import Optional
 from loguru import logger
 
 from workraft import peon
-from workraft.core import WorkerStateSingleton
+from workraft.core import WorkerStateSingleton, Workraft
 from workraft.db import (
     get_connection_pool,
     get_db_config,
@@ -52,7 +52,11 @@ class CLI:
             signal.signal(sig, signal_handler)
 
         logger.info(f"Getting Workraft object at {workraft_path}")
-        workraft_instance = import_workraft(workraft_path)
+        workraft_instance: Workraft = import_workraft(workraft_path)
+
+        if workraft_instance.setup_handler_fn is not None:
+            workraft_instance.setup_handler_fn()
+
         worker_id = worker_id if worker_id is not None else str(uuid.uuid4())
 
         WorkerStateSingleton.update(id=worker_id, queues=queues)
