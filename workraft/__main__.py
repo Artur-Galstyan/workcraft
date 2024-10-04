@@ -83,13 +83,6 @@ class CLI:
             daemon=True,
         )
         heartbeat_task.start()
-
-        # refire_tasks = threading.Thread(
-        #     target=refire_pending_tasks_periodically_sync,
-        #     args=(db_config,),
-        #     daemon=True,
-        # )
-        # refire_tasks.start()
         run_peon_task = asyncio.create_task(run_peon(db_config, workraft_instance))
         await asyncio.gather(run_peon_task, return_exceptions=True)
 

@@ -35,14 +35,14 @@ class Settings(BaseModel):
     These values are read from the workraft.config.json file.
     """
 
-    DB_PEON_HEARTBEAT_INTERVAL: int
-    DB_POLLING_INTERVAL: int
-    DB_SETUP_BACKOFF_MULTIPLIER_SECONDS: int
-    DB_SETUP_BACKOFF_MAX_SECONDS: int
-    DB_SETUP_RUN_SELF_CORRECT_TASK_INTERVAL: int
-    DB_SETUP_RUN_REOPEN_FAILED_TASK_INTERVAL: int
-    DB_SETUP_WAIT_TIME_BEFORE_WORKER_DECLARED_DEAD: int
-    DB_SETUP_CHECK_DEAD_WORKER_INTERVAL: int
+    DB_PEON_HEARTBEAT_INTERVAL: int = 5
+    DB_POLLING_INTERVAL: int = 5
+    DB_SETUP_BACKOFF_MULTIPLIER_SECONDS: int = 60
+    DB_SETUP_BACKOFF_MAX_SECONDS: int = 3600
+    DB_SETUP_RUN_SELF_CORRECT_TASK_INTERVAL: int = 10
+    DB_SETUP_RUN_REOPEN_FAILED_TASK_INTERVAL: int = 10
+    DB_SETUP_WAIT_TIME_BEFORE_WORKER_DECLARED_DEAD: int = 60
+    DB_SETUP_CHECK_DEAD_WORKER_INTERVAL: int = 10
 
 
 def load_settings() -> Settings:
@@ -57,7 +57,8 @@ def load_settings() -> Settings:
                 return Settings(**json.load(f))
         current_dir = current_dir.parent
 
-    raise FileNotFoundError("Could not find workraft.config.json")
+    logger.info("Could not find workraft.config.json. Using default settings.")
+    return Settings()
 
 
 settings = load_settings()
