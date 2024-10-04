@@ -1,57 +1,77 @@
 import asyncio
 import json
 
-import asyncpg
-from asyncpg import Record
-from asyncpg.pool import Pool
-from beartype.typing import Any, Optional
+from beartype.typing import Any
 from loguru import logger
 from pydantic import ValidationError
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    RetryError,
-    stop_after_attempt,
-    wait_exponential,
-)
+from sqlalchemy import Connection, text
 
-from workraft.constants import NEW_TASK_CHANNEL, TASK_QUEUE_SEPARATOR, TaskStatus
 from workraft.core import WorkerStateSingleton, Workraft
 from workraft.db import (
-    get_connection_pool,
-    get_task_listener_conenction,
-    update_worker_state_async,
+    DBEngineSingleton,
+    update_worker_state_sync,
     verify_database_setup,
 )
-from workraft.models import TaskPayload
+from workraft.models import DBConfig, Task, TaskStatus
+from workraft.settings import settings
 
 
-class NoTaskAvailable(Exception):
-    pass
+def dequeue_task(db_config: DBConfig) -> Task | None:
+    def _mark_task_as_invalid(conn: Connection, task_id: str):
+        logger.error(f"Marking task {task_id} as INVALID")
+        statement = text("""
+            UPDATE bountyboard
+            SET status = 'INVALID'
+            WHERE id = :id
+        """)
+        conn.execute(statement, {"id": task_id})
+        conn.commit()
+
+    with DBEngineSingleton.get(db_config).connect() as conn:
+        statement = text("""
+            SELECT * FROM bountyboard
+            WHERE status = 'PENDING'
+            ORDER BY created_at ASC
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+        """)
+        result = conn.execute(statement).fetchone()
+        if result:
+            resultdict = result._asdict()
+            try:
+                task = Task.from_db_data(resultdict)
+                statement = text("""
+                    UPDATE bountyboard
+                    SET status = 'RUNNING',
+                        worker_id = :worker_id
+                    WHERE id = :id
+                """)
+                conn.execute(
+                    statement,
+                    {"id": task.id, "worker_id": WorkerStateSingleton.get().id},
+                )
+                conn.commit()
+                WorkerStateSingleton.update(status="WORKING", current_task=task.id)
+                update_worker_state_sync(
+                    db_config, worker_state=WorkerStateSingleton.get()
+                )
+                return task
+            except ValidationError as e:
+                logger.error(f"Error validating task: {e}. Invalid task: {resultdict}")
+                _mark_task_as_invalid(conn, resultdict["id"])
+                return None
+            except Exception as e:
+                logger.error(f"Error dequeuing task: {e}")
+                _mark_task_as_invalid(conn, resultdict["id"])
+                return None
+        else:
+            return None
 
 
-async def run_peon(db_config, workraft):
-    pool = await get_connection_pool(db_config)
-    await verify_database_setup(pool)
-
-    listener_connection = await get_task_listener_conenction(db_config)
-
-    async with pool.acquire() as conn:
-        WorkerStateSingleton.update(status="IDLE", current_task=None)
-        await update_worker_state_async(conn, worker_state=WorkerStateSingleton.get())
-        await listener_connection.add_listener(
-            "new_task",
-            lambda conn, pid, channel, payload: asyncio.create_task(
-                notification_handler(pool, payload, channel, workraft)
-            ),
-        )
-
-        await listener_connection.add_listener(
-            WorkerStateSingleton.get().id,
-            lambda conn, pid, channel, payload: asyncio.create_task(
-                notification_handler(pool, payload, channel, workraft)
-            ),
-        )
+async def run_peon(db_config: DBConfig, workraft: Workraft):
+    verify_database_setup(db_config)
+    WorkerStateSingleton.update(status="IDLE", current_task=None)
+    update_worker_state_sync(db_config, worker_state=WorkerStateSingleton.get())
 
     logger.info("Tasks:")
     for name, _ in workraft.tasks.items():
@@ -61,198 +81,80 @@ async def run_peon(db_config, workraft):
 
     try:
         while True:
-            await asyncio.sleep(1)  # Avoid busy-waiting
+            task = dequeue_task(db_config)
+            if task:
+                logger.info(f"Dequeued task: {task}")
+                await execute_task(db_config, task, workraft)
+            else:
+                await asyncio.sleep(settings.DB_POLLING_INTERVAL)
+            await asyncio.sleep(settings.DB_POLLING_INTERVAL)
     except asyncio.CancelledError:
         logger.info("Main loop cancelled. Shutting down...")
-    finally:
-        await listener_connection.close()
-        await pool.close()
-        logger.info("Database connection closed.")
-
-
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
-    retry=retry_if_exception_type(NoTaskAvailable),
-)
-async def get_next_task_with_retry(pool, worker_id):
-    async with pool.acquire() as conn:
-        task_id = await conn.fetchval("SELECT get_next_task($1)", worker_id)
-        if task_id is None:
-            raise NoTaskAvailable("No task available in the queue")
-        task_id = str(task_id)
-        return task_id
-
-
-async def notification_handler(
-    pool: Pool, data: str, channel: str, workraft: Workraft
-) -> None:
-    logger.debug(f"Received notification: {data}")
-    row_id, queue = data.split(TASK_QUEUE_SEPARATOR)
-
-    if not should_process_notification(channel, queue):
-        return
-
-    try:
-        # Create a task and wait for it with a timeout
-        task = asyncio.create_task(process_notification(pool, row_id, workraft))
-        await asyncio.gather(task, return_exceptions=True)
-    except asyncio.CancelledError:
-        logger.warning("Task was cancelled")
-    except Exception as e:
-        logger.error(f"Unhandled exception in notification_handler: {str(e)}")
-
-
-def should_process_notification(channel: str, queue: str) -> bool:
-    worker = WorkerStateSingleton.get()
-    if channel != NEW_TASK_CHANNEL and channel != worker.id:
-        logger.debug(f"Ignoring notification from channel {channel}")
-        return False
-    if queue not in worker.queues:
-        logger.debug(f"Ignoring notification from queue {queue}")
-        return False
-    if worker.status != "IDLE":
-        logger.debug(f"Worker status is {worker.status}, ignoring notification.")
-        return False
-    return True
-
-
-async def process_notification(pool: Pool, row_id: str, workraft: Workraft) -> None:
-    WorkerStateSingleton.update(status="PREPARING")
-    async with pool.acquire() as conn:
-        await update_worker_state_async(conn, worker_state=WorkerStateSingleton.get())
-
-    try:
-        task_id = await get_next_task_with_retry(pool, WorkerStateSingleton.get().id)
-        logger.info(f"Successfully acquired task: {task_id}")
-    except (NoTaskAvailable, RetryError) as e:
-        await handle_task_acquisition_failure(pool, e)
-        return
-
-    await process_task(pool, task_id, workraft)
-
-
-async def handle_task_acquisition_failure(pool: Pool, error: Exception) -> None:
-    if isinstance(error, NoTaskAvailable):
-        logger.info("No task available. Returning to IDLE state.")
-    elif isinstance(error, RetryError):
-        logger.error(
-            "Failed to acquire task after 3 attempts. "
-            "The task queue may be empty "
-            "or the task may have been taken by another worker."
-        )
-
-    WorkerStateSingleton.update(status="IDLE")
-    async with pool.acquire() as conn:
-        await update_worker_state_async(conn, WorkerStateSingleton.get())
-
-
-async def process_task(pool: Pool, task_id: str, workraft: Workraft) -> None:
-    WorkerStateSingleton.update(status="WORKING", current_task=task_id)
-    async with pool.acquire() as conn:
-        await update_worker_state_async(conn, WorkerStateSingleton.get())
-        task_row = await get_task_row(conn, task_id)
-
-    if task_row is None:
-        logger.error(f"Row {task_id} not found!")
-        return
-
-    payload = TaskPayload.model_validate(json.loads(task_row["payload"]))
-    logger.info(f"Got task: {payload.name} and payload: {payload}")
-
-    task = workraft.tasks.get(payload.name)
-    if task is None:
-        logger.error(f"Task {payload.name} not found!")
-        return
-
-    await execute_task(pool, task_id, task, payload, workraft)
-
-
-async def get_task_row(conn: Any, task_id: str) -> Optional[Record]:
-    return await conn.fetchrow(
-        """
-        SELECT id, status, payload
-        FROM bountyboard
-        WHERE id = $1
-        FOR UPDATE SKIP LOCKED
-        """,
-        task_id,
-    )
 
 
 async def execute_task(
-    pool: asyncpg.Pool,
-    task_id: str,
-    task: Any,
-    payload: TaskPayload,
+    db_config: DBConfig,
+    task: Task,
     workraft: Workraft,
 ) -> None:
     try:
-        await execute_prerun_handler(workraft, task_id, payload)
+        await execute_prerun_handler(workraft, task)
     except Exception as e:
         logger.error(f"Prerun handler failed: {e}, continuing...")
 
     result = None
     status = TaskStatus.RUNNING
-    result = None
+
     try:
-        result = await execute_main_task(task, payload)
-        logger.info(f"Task {payload.name} returned: {result}")
+        result = await execute_main_task(workraft, task)
+        logger.info(f"Task {task.payload.name} returned: {result}")
         status = TaskStatus.SUCCESS
-    except ValidationError as e:
-        logger.error(f"Task {payload.name} failed: {e}: Invalid payload")
-        status = TaskStatus.FAILURE
-        result = str(e)
     except Exception as e:
-        logger.error(f"Task {payload.name} failed: {e}")
+        logger.error(f"Task {task.payload.name} failed: {e}")
         status = TaskStatus.FAILURE
         result = str(e)
     finally:
-        logger.info(f"Task {payload.name} finished with status: {status}")
-        async with pool.acquire() as conn:
+        logger.info(f"Task {task.payload.name} finished with status: {status}")
+        with DBEngineSingleton.get(db_config).connect() as conn:
             result = json.dumps(result)
-            await update_task_status(conn, task_id, status, result)
-
+            update_task_status(conn, task.id, status, result)
+        task.status = status
+        task.result = result
         WorkerStateSingleton.update(status="IDLE", current_task=None)
-        async with pool.acquire() as conn:
-            await update_worker_state_async(conn, WorkerStateSingleton.get())
+        update_worker_state_sync(db_config, WorkerStateSingleton.get())
     try:
-        await execute_postrun_handler(workraft, task_id, payload, result, status)
+        await execute_postrun_handler(workraft, task)
     except Exception as e:
         logger.error(f"Postrun handler failed: {e}")
 
 
-async def execute_prerun_handler(
-    workraft: Workraft, task_id: str, payload: TaskPayload
-) -> None:
+async def execute_prerun_handler(workraft: Workraft, task: Task) -> None:
     if workraft.prerun_handler_fn is not None:
         await execute_handler(
             workraft.prerun_handler_fn,
-            [task_id, payload.name] + payload.prerun_handler_args,
-            payload.prerun_handler_kwargs,
+            [task.id, task.payload.name] + task.payload.prerun_handler_args,
+            task.payload.prerun_handler_kwargs,
         )
 
 
-async def execute_main_task(task: Any, payload: TaskPayload) -> Any:
-    if asyncio.iscoroutinefunction(task):
-        return await task(*payload.task_args, **payload.task_kwargs)
+async def execute_main_task(workraft: Workraft, task: Task) -> Any:
+    task_handler = workraft.tasks[task.payload.name]
+    if asyncio.iscoroutinefunction(task_handler):
+        return await task_handler(*task.payload.task_args, **task.payload.task_kwargs)
     else:
-        return task(*payload.task_args, **payload.task_kwargs)
+        return task_handler(*task.payload.task_args, **task.payload.task_kwargs)
 
 
 async def execute_postrun_handler(
     workraft: Workraft,
-    task_id: str,
-    payload: TaskPayload,
-    result: Any,
-    status: TaskStatus,
+    task: Task,
 ) -> None:
     if workraft.postrun_handler_fn is not None:
         await execute_handler(
             workraft.postrun_handler_fn,
-            [task_id, payload.name, result, status.value]
-            + payload.postrun_handler_args,
-            payload.postrun_handler_kwargs,
+            [task.id, task.payload.name, task.result, task.status.value]
+            + task.payload.postrun_handler_args,
+            task.payload.postrun_handler_kwargs,
         )
 
 
@@ -263,20 +165,21 @@ async def execute_handler(handler: Any, args: list, kwargs: dict) -> None:
         handler(*args, **kwargs)
 
 
-async def update_task_status(
-    conn: Any, task_id: str, status: TaskStatus, result: Optional[Any]
+def update_task_status(
+    conn: Connection, task_id: str, status: TaskStatus, result: Any | None
 ) -> None:
     try:
-        await conn.execute(
-            """
-            UPDATE bountyboard
-            SET status = $1, result = $2
-            WHERE id = $3
-            """,
-            status.value,
-            result,
-            task_id,
+        conn.execute(
+            text(
+                "UPDATE bountyboard SET status = :status, result = :res WHERE id = :id"
+            ),
+            {
+                "status": status.value,
+                "res": json.dumps(result),
+                "id": task_id,
+            },
         )
+        conn.commit()
     except Exception as e:
         logger.error(f"Failed to update task {task_id} status to {status}: {e}")
         raise e

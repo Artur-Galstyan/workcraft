@@ -1,15 +1,26 @@
 import os
 import time
 
-import asyncpg
-import psycopg2
 from dotenv import load_dotenv
 from loguru import logger
+from sqlalchemy import create_engine, Engine, text
 
-from workraft.core import WorkerState, WorkerStateSingleton
-from workraft.models import DBConfig
+from workraft.models import DBConfig, WorkerState
 from workraft.settings import settings
-from workraft.sql_commands import get_all_sql_commands
+
+
+class DBEngineSingleton:
+    _engine: Engine | None = None
+
+    @staticmethod
+    def get(db_config: DBConfig) -> Engine:
+        if DBEngineSingleton._engine is None:
+            _engine = create_engine(DBConfig.get_uri(db_config))
+            DBEngineSingleton._engine = _engine
+        assert (
+            DBEngineSingleton._engine is not None
+        ), "DBEngineSingleton._engine is None"
+        return DBEngineSingleton._engine
 
 
 def get_db_config() -> DBConfig:
@@ -28,96 +39,43 @@ def get_db_config() -> DBConfig:
     return DBConfig(host=host, port=int(port), user=user, password=pswd, database=name)
 
 
-async def get_task_listener_conenction(db_config: DBConfig) -> asyncpg.Connection:
-    try:
-        conn = await asyncpg.connect(**db_config.model_dump())
-        logger.info("Connected to the Stronghold!")
-        return conn
-    except Exception as e:
-        logger.error(f"Failed to connect to the stronghold: {e}")
-        raise ValueError("Failed to connect to the stronghold!")
+def update_worker_state_sync(db_config: DBConfig, worker_state: WorkerState):
+    with DBEngineSingleton.get(db_config).connect() as conn:
+        statement = text("""
+            INSERT INTO peon (id, status, last_heartbeat, current_task, queues)
+            VALUES (:id, :status, NOW(), :current_task, :queues)
+            ON DUPLICATE KEY UPDATE
+            status = :status,
+            last_heartbeat = NOW(),
+            current_task = :current_task,
+            queues = :queues
+        """)
 
-
-async def get_connection_pool(db_config: DBConfig) -> asyncpg.Pool:
-    try:
-        pool = await asyncpg.create_pool(**db_config.model_dump())
-        if pool is None:
-            raise ValueError("Failed to create connection pool.")
-        logger.info("Connected to the stronghold!")
-        return pool
-    except Exception as e:
-        logger.error(f"Failed to connect to the stronghold: {e}")
-        raise ValueError("Failed to connect to the stronghold!")
-
-
-async def update_worker_state_async(conn, worker_state: WorkerState):
-    await conn.execute(
-        """
-        INSERT INTO peon (id, status, last_heartbeat, current_task)
-        VALUES ($1, $2, NOW(), $3)
-        ON CONFLICT (id) DO UPDATE
-        SET status = $2, last_heartbeat = NOW(), current_task = $3
-    """,
-        worker_state.id,
-        worker_state.status,
-        worker_state.current_task,
-    )
-
-
-async def setup_database(pool: asyncpg.Pool):
-    try:
-        async with pool.acquire() as conn:
-            all_sql_tasks = get_all_sql_commands()
-
-            for task, file_name in all_sql_tasks:
-                logger.debug(f"Executing task: {file_name}")
-                await conn.execute(task)
-
-    except asyncpg.DuplicateObjectError as e:
-        logger.warning(f"Some database objects already exist: {e}")
-        # This is not a fatal error, so we can continue
-    except Exception as e:
-        logger.error(f"Failed to set up database: {e}")
-        raise
-
-
-async def verify_database_setup(pool: asyncpg.Pool):
-    try:
-        # Check if tables exist
-        async with pool.acquire() as conn:
-            warband_exists = await conn.fetchval(
-                "SELECT EXISTS (SELECT FROM information_schema.tables "
-                "WHERE table_name = 'peon')"
-            )
-            bountyboard_exists = await conn.fetchval(
-                "SELECT EXISTS (SELECT FROM information_schema.tables "
-                "WHERE table_name = 'bountyboard')"
-            )
-
-            if not (warband_exists and bountyboard_exists):
-                raise Exception("Required tables do not exist in the database")
-
-            logger.info("Database setup verified successfully.")
-    except Exception as e:
-        logger.error(f"Database verification failed: {e}")
-        raise
+        conn.execute(
+            statement,
+            {
+                "id": worker_state.id,
+                "status": worker_state.status,
+                "current_task": worker_state.current_task,
+                "queues": ",".join(worker_state.queues),
+            },
+        )
+        conn.commit()
 
 
 def send_heartbeat_sync(db_config: DBConfig, worker_id: str) -> None:
     conn = None
     while True:
         try:
-            conn = psycopg2.connect(**db_config.dict())
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT heartbeat(%s)",
-                    (worker_id,),
-                )
+            with DBEngineSingleton.get(db_config).connect() as conn:
+                update_query = [
+                    "UPDATE peon",
+                    "SET last_heartbeat = NOW()",
+                    f'WHERE id = "{worker_id}"',
+                ]
+                conn.execute(text(" ".join(update_query)))
                 conn.commit()
-            logger.debug(
-                f"Drums of war beating... (Heartbeat sent), worker_id: {worker_id}"
-            )
-            time.sleep(settings.db_polling_interval)
+                time.sleep(settings.DB_PEON_HEARTBEAT_INTERVAL)
         except Exception as e:
             logger.error(f"Heartbeat failed: {e}")
         finally:
@@ -125,50 +83,6 @@ def send_heartbeat_sync(db_config: DBConfig, worker_id: str) -> None:
                 conn.close()
 
 
-def update_worker_state_sync(db_config: DBConfig, worker_state: WorkerState):
-    conn = psycopg2.connect(**db_config.dict())
-
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO peon (id, status, last_heartbeat, current_task, queues)
-            VALUES (%s , %s, NOW(), %s, %s)
-            ON CONFLICT (id) DO UPDATE
-            SET status = %s, last_heartbeat = NOW(), current_task = %s, queues = %s
-        """,
-            (
-                worker_state.id,
-                worker_state.status,
-                worker_state.current_task,
-                worker_state.queues,
-                worker_state.status,
-                worker_state.current_task,
-                worker_state.queues,
-            ),
-        )
-        conn.commit()
-
-
-def refire_pending_tasks_periodically_sync(
-    db_config: DBConfig, interval=settings.db_refire_interval
-):
-    while True:
-        if WorkerStateSingleton.get().status != "IDLE":
-            logger.debug("Worker is not IDLE, skipping refire")
-            time.sleep(interval)
-            continue
-        try:
-            with psycopg2.connect(**db_config.dict()) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT send_refire_signal(%s)",
-                        (WorkerStateSingleton.get().id,),
-                    )
-                    res = cur.fetchone()[0]  # Get the integer res
-                    conn.commit()
-            logger.debug(
-                f"Refired pending tasks. Number of tasks notified: {res if res else 0}"
-            )
-        except Exception as e:
-            logger.error(f"Error refiring pending tasks: {e}")
-        time.sleep(interval)
+def verify_database_setup(db_config: DBConfig):
+    # TODO: check if the database is setup correctly
+    pass

@@ -6,6 +6,7 @@ from multiprocessing import Pool
 from loguru import logger
 from workraft.core import Workraft
 from workraft.db import get_db_config
+from workraft.models import TaskPayload
 
 
 workraft = Workraft()
@@ -62,12 +63,12 @@ async def main():
         b = random.randint(1, 100)
         c = random.randint(1, 100)
 
-        await workraft.send_task_async(
-            "simple_task",
-            get_db_config(),
-            [a, b],
-            task_kwargs={"c": c},
-            retry_on_failure=True,
+        workraft.send_task_sync(
+            db_config=get_db_config(),
+            payload=TaskPayload(
+                name="simple_task",
+                task_args=[a, b, c],
+            ),
         )
 
         # await conn.execute(

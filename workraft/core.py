@@ -1,37 +1,37 @@
-import json
 import uuid
 
-import asyncpg
 import beartype
-import psycopg2
-from beartype.typing import Any, Callable, Literal, Optional, Protocol
+from beartype.typing import Callable
 from loguru import logger
+from sqlalchemy import text
 
-from workraft.models import DBConfig, WorkerState
-
-
-class SetupHandlerFn(Protocol):
-    def __call__(self): ...
-
-
-class PostRunHandlerFn(Protocol):
-    def __call__(
-        self,
-        task_id: str,
-        task_name: str,
-        result: Any,
-        status: Literal["FAILURE", "SUCCESS", "RUNNING", "PENDING"],
-        *args,
-        **kwargs,
-    ): ...
+from workraft.constants import DEFAULT_QUEUE
+from workraft.db import DBEngineSingleton
+from workraft.models import (
+    DBConfig,
+    PostRunHandlerFn,
+    PreRunHandlerFn,
+    SetupHandlerFn,
+    TaskPayload,
+    WorkerState,
+)
 
 
-class PreRunHandlerFn(Protocol):
-    def __call__(
-        self,
-        *args,
-        **kwargs,
-    ): ...
+class WorkerStateSingleton:
+    _worker_state: WorkerState = WorkerState(
+        id=str(uuid.uuid4()), status="IDLE", current_task=None, queues=DEFAULT_QUEUE
+    )
+
+    @staticmethod
+    def get():
+        return WorkerStateSingleton._worker_state
+
+    @staticmethod
+    def update(**kwargs):
+        WorkerStateSingleton._worker_state = (
+            WorkerStateSingleton._worker_state.model_copy(update=kwargs)
+        )
+        return WorkerStateSingleton._worker_state
 
 
 class Workraft:
@@ -39,9 +39,9 @@ class Workraft:
 
     def __init__(self):
         self.tasks: dict[str, Callable] = {}
-        self.setup_handler_fn: Optional[Callable] = None
-        self.prerun_handler_fn: Optional[Callable] = None
-        self.postrun_handler_fn: Optional[Callable] = None
+        self.setup_handler_fn: Callable | None = None
+        self.prerun_handler_fn: Callable | None = None
+        self.postrun_handler_fn: Callable | None = None
 
     def task(self, name: str):
         def decorator(func: Callable):
@@ -74,112 +74,34 @@ class Workraft:
     @staticmethod
     @beartype.beartype
     def send_task_sync(
-        name: str,
-        task_args: list,
-        task_kwargs: dict,
         db_config: DBConfig,
+        payload: TaskPayload,
         queue: str = "DEFAULT",
-        prerun_handler_args: list = [],
-        prerun_handler_kwargs: dict = {},
-        postrun_handler_args: list = [],
-        postrun_handler_kwargs: dict = {},
         retry_on_failure: bool = False,
         retry_limit: int = 3,
     ) -> str:
         id = str(uuid.uuid4())
-        logger.info(f"Sending task {name} to queue {queue} with id {id}")
-        conn = None
+        logger.info(f"Sending task {payload.name} to queue {queue} with id {id}")
         try:
-            conn = psycopg2.connect(**db_config.dict())
-            with conn.cursor() as cur:
-                cur.execute(
+            with DBEngineSingleton.get(db_config).connect() as conn:
+                statement = text(
                     """
     INSERT INTO bountyboard (id, status, payload, queue, retry_on_failure, retry_limit)
-    VALUES (%s, 'PENDING', %s, %s, %s, %s)
-                                """,
-                    (
-                        id,
-                        json.dumps(
-                            {
-                                "name": name,
-                                "task_args": task_args,
-                                "task_kwargs": task_kwargs,
-                                "prerun_handler_args": prerun_handler_args,
-                                "prerun_handler_kwargs": prerun_handler_kwargs,
-                                "postrun_handler_args": postrun_handler_args,
-                                "postrun_handler_kwargs": postrun_handler_kwargs,
-                            }
-                        ),
-                        queue,
-                        retry_on_failure,
-                        retry_limit,
-                    ),
+    VALUES (:id, 'PENDING', :payload, :queue, :retry_on_failure, :retry_limit)
+                    """
+                )
+                conn.execute(
+                    statement,
+                    {
+                        "id": id,
+                        "payload": payload.model_dump_json(),
+                        "queue": queue,
+                        "retry_on_failure": retry_on_failure,
+                        "retry_limit": retry_limit,
+                    },
                 )
                 conn.commit()
         except Exception as e:
             logger.error(f"Failed to send task: {e}")
             raise e
-        finally:
-            if conn:
-                conn.close()
         return id
-
-    @staticmethod
-    @beartype.beartype
-    async def send_task_async(
-        name: str,
-        db_config: DBConfig,
-        task_args: list[Any] = [],
-        task_kwargs: dict[str, Any] = {},
-        queue: str = "DEFAULT",
-        prerun_handler_args: list[Any] = [],
-        prerun_handler_kwargs: dict[str, Any] = {},
-        postrun_handler_args: list[Any] = [],
-        postrun_handler_kwargs: dict[str, Any] = {},
-        retry_on_failure: bool = False,
-        retry_limit: int = 3,
-    ) -> str:
-        id = str(uuid.uuid4())
-        pool = await asyncpg.create_pool(**db_config.model_dump())
-        if not pool:
-            raise Exception("Failed to create connection pool")
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """
-INSERT INTO bountyboard (id, status, payload, queue, retry_on_failure, retry_limit)
-VALUES ($1, 'PENDING', $2, $3, $4, $5)
-                """,
-                id,
-                json.dumps(
-                    {
-                        "name": name,
-                        "task_args": task_args,
-                        "task_kwargs": task_kwargs,
-                        "prerun_handler_args": prerun_handler_args,
-                        "prerun_handler_kwargs": prerun_handler_kwargs,
-                        "postrun_handler_args": postrun_handler_args,
-                        "postrun_handler_kwargs": postrun_handler_kwargs,
-                    }
-                ),
-                queue,
-                retry_on_failure,
-                retry_limit,
-            )
-        return id
-
-
-class WorkerStateSingleton:
-    _worker_state: WorkerState = WorkerState(
-        id=str(uuid.uuid4()), status="IDLE", current_task=None
-    )
-
-    @staticmethod
-    def get():
-        return WorkerStateSingleton._worker_state
-
-    @staticmethod
-    def update(**kwargs):
-        WorkerStateSingleton._worker_state = (
-            WorkerStateSingleton._worker_state.model_copy(update=kwargs)
-        )
-        return WorkerStateSingleton._worker_state
