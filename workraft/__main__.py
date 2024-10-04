@@ -138,7 +138,7 @@ class CLI:
                 password=db_password,
                 database=db_name,
             )
-        sqls_dir = pathlib.Path(__file__).parent.parent / "sqls"
+        sqls_dir = pathlib.Path(__file__).parent / "sqls"
         sql_files = sorted(sqls_dir.glob("*.sql"))
         with DBEngineSingleton.get(db_config).connect() as conn:
             conn.execute(text("SET GLOBAL log_bin_trust_function_creators = 1;"))
