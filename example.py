@@ -1,4 +1,5 @@
 import asyncio
+import json
 import random
 import time
 from multiprocessing import Pool
@@ -56,35 +57,40 @@ def parallel_task():
 
 
 async def main():
-    n_tasks = 1
-    task_id = ""
-    for _ in range(n_tasks):
-        a = random.randint(1, 100)
-        b = random.randint(1, 100)
-        c = random.randint(1, 100)
+    # n_tasks = 1
+    # task_id = ""
+    # for _ in range(n_tasks):
+    #     a = random.randint(1, 100)
+    #     b = random.randint(1, 100)
+    #     c = random.randint(1, 100)
 
-        task_id = workraft.send_task_sync(
-            db_config=get_db_config(),
-            payload=TaskPayload(
-                name="simple_task___",
-                task_args=[a, b, c],
-            ),
-        )
+    #     task_id = workraft.send_task_sync(
+    #         db_config=get_db_config(),
+    #         payload=TaskPayload(
+    #             name="simple_task___",
+    #             task_args=[a, b, c],
+    #         ),
+    #     )
 
-        # await conn.execute(
-        #     """
-        #         INSERT INTO bountyboard (id, status, payload)
-        #         VALUES ($1, 'PENDING', $2)
-        #         """,
-        #     uuid.uuid4(),
-        #     json.dumps({"name": "complex_task_1", "args": []}),
-        # )
+    #     # await conn.execute(
+    #     #     """
+    #     #         INSERT INTO bountyboard (id, status, payload)
+    #     #         VALUES ($1, 'PENDING', $2)
+    #     #         """,
+    #     #     uuid.uuid4(),
+    #     #     json.dumps({"name": "complex_task_1", "args": []}),
+    #     # )
 
-    await asyncio.sleep(5)
-    task_id = "23423uo4u2o3i4u24"
+    # await asyncio.sleep(5)
+    task_id = "9aa6437f-b879-47e4-bd7c-d3b623670bdd"
     logger.info(f"getting task for id {task_id}")
     task = Workraft.get_task_sync(get_db_config(), task_id)
-    print(task)
+    assert task is not None
+    assert task.result is not None
+    res = json.loads(task.result)
+    print(res, type(res))
+    _, docs = res
+    print(docs, type(docs))
 
 
 if __name__ == "__main__":

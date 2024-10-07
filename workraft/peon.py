@@ -183,7 +183,7 @@ def update_task_status(
             ),
             {
                 "status": status.value,
-                "res": json.dumps(result),
+                "res": result,
                 "id": task_id,
             },
         )
