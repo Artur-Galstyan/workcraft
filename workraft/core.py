@@ -12,6 +12,7 @@ from workraft.models import (
     PostRunHandlerFn,
     PreRunHandlerFn,
     SetupHandlerFn,
+    Task,
     TaskPayload,
     WorkerState,
 )
@@ -105,3 +106,23 @@ class Workraft:
             logger.error(f"Failed to send task: {e}")
             raise e
         return id
+
+    @staticmethod
+    @beartype.beartype
+    def get_task_sync(db_config: DBConfig, task_id: str) -> Task | None:
+        try:
+            with DBEngineSingleton.get(db_config).connect() as conn:
+                statement = text(
+                    """
+                    SELECT * FROM bountyboard WHERE id = :id
+                    """
+                )
+                result = conn.execute(statement, {"id": task_id}).fetchone()
+                if result:
+                    return Task.from_db_data(result._asdict())
+                else:
+                    logger.info(f"Task {task_id} not found")
+                    return None
+        except Exception as e:
+            logger.error(f"Failed to get task: {e}")
+            raise e

@@ -57,16 +57,16 @@ def parallel_task():
 
 async def main():
     n_tasks = 1
-
+    task_id = ""
     for _ in range(n_tasks):
         a = random.randint(1, 100)
         b = random.randint(1, 100)
         c = random.randint(1, 100)
 
-        workraft.send_task_sync(
+        task_id = workraft.send_task_sync(
             db_config=get_db_config(),
             payload=TaskPayload(
-                name="simple_task",
+                name="simple_task___",
                 task_args=[a, b, c],
             ),
         )
@@ -79,6 +79,12 @@ async def main():
         #     uuid.uuid4(),
         #     json.dumps({"name": "complex_task_1", "args": []}),
         # )
+
+    await asyncio.sleep(5)
+    task_id = "23423uo4u2o3i4u24"
+    logger.info(f"getting task for id {task_id}")
+    task = Workraft.get_task_sync(get_db_config(), task_id)
+    print(task)
 
 
 if __name__ == "__main__":

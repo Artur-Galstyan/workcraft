@@ -16,7 +16,7 @@ from workraft.models import DBConfig, Task, TaskStatus
 from workraft.settings import settings
 
 
-def dequeue_task(db_config: DBConfig) -> Task | None:
+def dequeue_task(db_config: DBConfig, workraft: Workraft) -> Task | None:
     def _mark_task_as_invalid(conn: Connection, task_id: str):
         logger.error(f"Marking task {task_id} as INVALID")
         statement = text("""
@@ -27,15 +27,23 @@ def dequeue_task(db_config: DBConfig) -> Task | None:
         conn.execute(statement, {"id": task_id})
         conn.commit()
 
+    registered_tasks = workraft.tasks.keys()
     with DBEngineSingleton.get(db_config).connect() as conn:
-        statement = text("""
-            SELECT * FROM bountyboard
-            WHERE status = 'PENDING'
-            ORDER BY created_at ASC
-            LIMIT 1
-            FOR UPDATE SKIP LOCKED
-        """)
-        result = conn.execute(statement).fetchone()
+        try:
+            statement = text("""
+                SELECT * FROM bountyboard
+                WHERE status = 'PENDING'
+                AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.name')) IN :registered_tasks
+                ORDER BY created_at ASC
+                LIMIT 1
+                FOR UPDATE
+            """)
+            result = conn.execute(
+                statement, {"registered_tasks": tuple(registered_tasks)}
+            ).fetchone()
+        except Exception as e:
+            logger.error(f"Error querying task: {e}")
+            return None
         if result:
             resultdict = result._asdict()
             try:
@@ -81,7 +89,7 @@ async def run_peon(db_config: DBConfig, workraft: Workraft):
 
     try:
         while True:
-            task = dequeue_task(db_config)
+            task = dequeue_task(db_config, workraft)
             if task:
                 logger.info(f"Dequeued task: {task}")
                 await execute_task(db_config, task, workraft)

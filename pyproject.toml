@@ -1,6 +1,6 @@
 [project]
 name = "workraft"
-version = "0.5.2"
+version = "0.5.3"
 description = "A simple, lightweight, database-only, worker library in Python"
 readme = "README.md"
 requires-python = ">=3.10"
