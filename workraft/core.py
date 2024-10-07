@@ -13,6 +13,7 @@ from workraft.models import (
     PreRunHandlerFn,
     SetupHandlerFn,
     Task,
+    TaskHandlerFn,
     TaskPayload,
     WorkerState,
 )
@@ -45,7 +46,7 @@ class Workraft:
         self.postrun_handler_fn: Callable | None = None
 
     def task(self, name: str):
-        def decorator(func: Callable):
+        def decorator(func: TaskHandlerFn):
             self.tasks[name] = func
             return func
 

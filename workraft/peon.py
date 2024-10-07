@@ -148,9 +148,13 @@ async def execute_prerun_handler(workraft: Workraft, task: Task) -> None:
 async def execute_main_task(workraft: Workraft, task: Task) -> Any:
     task_handler = workraft.tasks[task.payload.name]
     if asyncio.iscoroutinefunction(task_handler):
-        return await task_handler(*task.payload.task_args, **task.payload.task_kwargs)
+        return await task_handler(
+            task.id, *task.payload.task_args, **task.payload.task_kwargs
+        )
     else:
-        return task_handler(*task.payload.task_args, **task.payload.task_kwargs)
+        return task_handler(
+            task.id, *task.payload.task_args, **task.payload.task_kwargs
+        )
 
 
 async def execute_postrun_handler(

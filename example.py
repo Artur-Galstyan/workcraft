@@ -23,7 +23,8 @@ def setup_handler():
 
 
 @workraft.task("simple_task")
-def simple_task(a: int, b: int, c: int) -> int:
+def simple_task(task_id: str, a: int, b: int, c: int) -> int:
+    print(task_id)
     global global_counter
     global_counter += 1
     time.sleep(1)
@@ -39,58 +40,32 @@ def postrun_handler(task_id, task_name, result, status):
     )
 
 
-def get_random_number():
-    logger.info("Getting random number...")
-    time.sleep(random.randint(5, 10))
-    return random.randint(1, 100)
+async def main():
+    n_tasks = 1
+    task_id = ""
+    for _ in range(n_tasks):
+        a = random.randint(1, 100)
+        b = random.randint(1, 100)
+        c = random.randint(1, 100)
 
-
-@workraft.task("complex_task_1")
-def parallel_task():
-    num_processes = 8
-    n_random_numbers = 20
-    with Pool(processes=num_processes) as pool:
-        pool.starmap(
-            get_random_number,
-            [() for _ in range(n_random_numbers)],
+        task_id = workraft.send_task_sync(
+            db_config=get_db_config(),
+            payload=TaskPayload(
+                name="simple_task",
+                task_args=[a, b, c],
+            ),
         )
 
-
-async def main():
-    # n_tasks = 1
-    # task_id = ""
-    # for _ in range(n_tasks):
-    #     a = random.randint(1, 100)
-    #     b = random.randint(1, 100)
-    #     c = random.randint(1, 100)
-
-    #     task_id = workraft.send_task_sync(
-    #         db_config=get_db_config(),
-    #         payload=TaskPayload(
-    #             name="simple_task___",
-    #             task_args=[a, b, c],
-    #         ),
-    #     )
-
-    #     # await conn.execute(
-    #     #     """
-    #     #         INSERT INTO bountyboard (id, status, payload)
-    #     #         VALUES ($1, 'PENDING', $2)
-    #     #         """,
-    #     #     uuid.uuid4(),
-    #     #     json.dumps({"name": "complex_task_1", "args": []}),
-    #     # )
-
     # await asyncio.sleep(5)
-    task_id = "9aa6437f-b879-47e4-bd7c-d3b623670bdd"
-    logger.info(f"getting task for id {task_id}")
-    task = Workraft.get_task_sync(get_db_config(), task_id)
-    assert task is not None
-    assert task.result is not None
-    res = json.loads(task.result)
-    print(res, type(res))
-    _, docs = res
-    print(docs, type(docs))
+    # task_id = "7e1c5c4c-7d8c-4800-9c77-456a4e5fbe39"
+    # logger.info(f"getting task for id {task_id}")
+    # task = Workraft.get_task_sync(get_db_config(), task_id)
+    # assert task is not None
+    # assert task.result is not None
+    # res = json.loads(task.result)
+    # print(res, type(res))
+    # _, docs = res
+    # print(docs, type(docs))
 
 
 if __name__ == "__main__":

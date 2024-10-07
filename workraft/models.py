@@ -71,6 +71,15 @@ class SetupHandlerFn(Protocol):
     def __call__(self): ...
 
 
+class TaskHandlerFn(Protocol):
+    def __call__(
+        self,
+        task_id: str,
+        *args,
+        **kwargs,
+    ) -> Any: ...
+
+
 class PostRunHandlerFn(Protocol):
     def __call__(
         self,
