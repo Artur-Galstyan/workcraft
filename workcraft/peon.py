@@ -7,7 +7,7 @@ from loguru import logger
 from pydantic import ValidationError
 from sqlalchemy import Connection, text
 
-from workcraft.core import workcraft, WorkerStateSingleton
+from workcraft.core import Workcraft, WorkerStateSingleton
 from workcraft.db import (
     DBEngineSingleton,
     update_worker_state_sync,
@@ -17,7 +17,7 @@ from workcraft.models import DBConfig, Task, TaskStatus
 from workcraft.settings import settings
 
 
-def dequeue_task(db_config: DBConfig, workcraft: workcraft) -> Task | None:
+def dequeue_task(db_config: DBConfig, workcraft: Workcraft) -> Task | None:
     def _mark_task_as_invalid(conn: Connection, task_id: str):
         logger.error(f"Marking task {task_id} as INVALID")
         statement = text("""
@@ -77,7 +77,7 @@ def dequeue_task(db_config: DBConfig, workcraft: workcraft) -> Task | None:
             return None
 
 
-async def run_peon(db_config: DBConfig, workcraft: workcraft):
+async def run_peon(db_config: DBConfig, workcraft: Workcraft):
     verify_database_setup(db_config)
     WorkerStateSingleton.update(status="IDLE", current_task=None)
     update_worker_state_sync(db_config, worker_state=WorkerStateSingleton.get())
@@ -108,7 +108,7 @@ async def run_peon(db_config: DBConfig, workcraft: workcraft):
 async def execute_task(
     db_config: DBConfig,
     task: Task,
-    workcraft: workcraft,
+    workcraft: Workcraft,
 ) -> None:
     try:
         await execute_prerun_handler(workcraft, task)
@@ -141,7 +141,7 @@ async def execute_task(
         logger.error(f"Postrun handler failed: {e}")
 
 
-async def execute_prerun_handler(workcraft: workcraft, task: Task) -> None:
+async def execute_prerun_handler(workcraft: Workcraft, task: Task) -> None:
     if workcraft.prerun_handler_fn is not None:
         await execute_handler(
             workcraft.prerun_handler_fn,
@@ -150,7 +150,7 @@ async def execute_prerun_handler(workcraft: workcraft, task: Task) -> None:
         )
 
 
-async def execute_main_task(workcraft: workcraft, task: Task) -> Any:
+async def execute_main_task(workcraft: Workcraft, task: Task) -> Any:
     task_handler = workcraft.tasks[task.payload.name]
     if asyncio.iscoroutinefunction(task_handler):
         return await task_handler(
@@ -163,7 +163,7 @@ async def execute_main_task(workcraft: workcraft, task: Task) -> Any:
 
 
 async def execute_postrun_handler(
-    workcraft: workcraft,
+    workcraft: Workcraft,
     task: Task,
 ) -> None:
     if workcraft.postrun_handler_fn is not None:

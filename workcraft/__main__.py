@@ -10,7 +10,7 @@ import fire
 from loguru import logger
 from sqlalchemy import text
 
-from workcraft.core import workcraft, WorkerStateSingleton
+from workcraft.core import Workcraft, WorkerStateSingleton
 from workcraft.db import (
     DBConfig,
     DBEngineSingleton,
@@ -66,7 +66,7 @@ class CLI:
             signal.signal(sig, signal_handler_partial)
 
         logger.info(f"Getting workcraft object at {workcraft_path}")
-        workcraft_instance: workcraft = import_module_attribute(workcraft_path)
+        workcraft_instance: Workcraft = import_module_attribute(workcraft_path)
 
         if workcraft_instance.setup_handler_fn is not None:
             workcraft_instance.setup_handler_fn()

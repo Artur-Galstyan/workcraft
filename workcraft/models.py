@@ -95,6 +95,8 @@ class PostRunHandlerFn(Protocol):
 class PreRunHandlerFn(Protocol):
     def __call__(
         self,
+        task_id: str,
+        task_name: str,
         *args,
         **kwargs,
     ): ...

@@ -36,8 +36,8 @@ class WorkerStateSingleton:
         return WorkerStateSingleton._worker_state
 
 
-class workcraft:
-    """workcraft: A simple distributed task system."""
+class Workcraft:
+    """Workcraft: A simple distributed task system."""
 
     def __init__(self):
         self.tasks: dict[str, Callable] = {}

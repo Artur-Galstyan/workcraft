@@ -2,6 +2,20 @@ import fire
 from workcraft.utils import run_command
 
 
+def stop_mysql_docker(container_name: str = "workcraft-mysql", debug: bool = False):
+    try:
+        run_command(f"docker stop {container_name}", debug=debug)
+    except Exception as e:
+        print("Failed to stop the container, probably it is not running")
+        print("Error", e)
+
+    try:
+        run_command(f"docker rm {container_name}", debug=debug)
+    except Exception as e:
+        print("Failed to remove the container, probably it does not exist")
+        print("Error", e)
+
+
 def start_mysql_docker(
     db_port: int = 3306,
     db_user: str = "root",
