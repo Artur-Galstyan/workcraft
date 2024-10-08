@@ -1,8 +1,6 @@
 import asyncio
-import json
 import random
 import time
-from multiprocessing import Pool
 
 from loguru import logger
 from workcraft.core import workcraft
@@ -36,19 +34,18 @@ def simple_task(task_id: str, a: int, b: int, c: int) -> int:
 @workcraft.postrun_handler()
 def postrun_handler(task_id, task_name, result, status):
     logger.info(
-        f"Postrun handler called for {task_id} and {task_name}! Got result: {result} and status {status}"
+        f"PR called for {task_id} and {task_name}! Got {result} and status {status}"
     )
 
 
 async def main():
     n_tasks = 1
-    task_id = ""
     for _ in range(n_tasks):
         a = random.randint(1, 100)
         b = random.randint(1, 100)
         c = random.randint(1, 100)
 
-        task_id = workcraft.send_task_sync(
+        workcraft.send_task_sync(
             db_config=get_db_config(),
             payload=TaskPayload(
                 name="simple_task",
