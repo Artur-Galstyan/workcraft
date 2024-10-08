@@ -5,9 +5,9 @@ from beartype.typing import Callable
 from loguru import logger
 from sqlalchemy import text
 
-from workraft.constants import DEFAULT_QUEUE
-from workraft.db import DBEngineSingleton
-from workraft.models import (
+from workcraft.constants import DEFAULT_QUEUE
+from workcraft.db import DBEngineSingleton
+from workcraft.models import (
     DBConfig,
     PostRunHandlerFn,
     PreRunHandlerFn,
@@ -36,8 +36,8 @@ class WorkerStateSingleton:
         return WorkerStateSingleton._worker_state
 
 
-class Workraft:
-    """Workraft: A simple distributed task system."""
+class workcraft:
+    """workcraft: A simple distributed task system."""
 
     def __init__(self):
         self.tasks: dict[str, Callable] = {}

@@ -1,16 +1,16 @@
-# Workraft
+# workcraft
 
 ## A simple, lightweight, database-only, worker library in Python
 
-Workraft is a simple, lightweight, database-only worker library in Python with a MySQL database as the single source of truth.
+workcraft is a simple, lightweight, database-only worker library in Python with a MySQL database as the single source of truth.
 
-Workraft adresses some of the pain points of using Celery, namely its incapability to handle long-running tasks and the fact that you need a message broker and that also that sometimes the workers aren't doing the tasks as you would expect them to.
+workcraft adresses some of the pain points of using Celery, namely its incapability to handle long-running tasks and the fact that you need a message broker and that also that sometimes the workers aren't doing the tasks as you would expect them to.
 
-All Workraft needs is a running MySQL database, which means you could in theory scale Workraft both vertically (get more database resources) and horizontally (get more databases). But so far, I've not tried scaling it that way.
+All workcraft needs is a running MySQL database, which means you could in theory scale workcraft both vertically (get more database resources) and horizontally (get more databases). But so far, I've not tried scaling it that way.
 
-Workraft is **not** the best in sitations where you need extreme precision and sub-second latency/wait times before a task is fetched and processed.
+workcraft is **not** the best in sitations where you need extreme precision and sub-second latency/wait times before a task is fetched and processed.
 
-But if it's OK for you that your workers take at least 1 second to fetch your task AND you want a clear overview of your tasks and workers (using a database GUI for example), then Workraft is ideal for you.
+But if it's OK for you that your workers take at least 1 second to fetch your task AND you want a clear overview of your tasks and workers (using a database GUI for example), then workcraft is ideal for you.
 
 
 ## Installation
@@ -18,7 +18,7 @@ But if it's OK for you that your workers take at least 1 second to fetch your ta
 Run
 
 ```
-pip install workraft
+pip install workcraft
 ```
 
 ## Getting started
@@ -29,8 +29,8 @@ First, you need a running MySQL database. Then, for one time, you need to setup 
 WK_DB_HOST="127.0.0.1"
 WK_DB_PORT=3306
 WK_DB_USER="root"
-WK_DB_PASS="workraft"
-WK_DB_NAME="workraft"
+WK_DB_PASS="workcraft"
+WK_DB_NAME="workcraft"
 ```
 
 (Adjust to your settings of course)
@@ -38,7 +38,7 @@ WK_DB_NAME="workraft"
 Then, run:
 
 ```
-python3 -m workraft setup_database_tables
+python3 -m workcraft setup_database_tables
 ```
 
 This command will take the connection parameters from your `.env` file - but it's not strictly required. You can also pass it those as parameters. Here are the args of the `setup_database_tables` function:
@@ -48,7 +48,7 @@ def setup_database_tables(
     db_host: str = "127.0.0.1",
     db_port: int = 3306,
     db_user: str = "root",
-    db_name: str = "workraft",
+    db_name: str = "workcraft",
     db_password: str | None = None,
     read_from_env: bool = True,
     drop_tables: bool = False,
@@ -58,7 +58,7 @@ def setup_database_tables(
 
 E.g.:
 ```
-python3 -m workraft setup_database_tables --read_from_env=False --db_password=test --drop_tables=True
+python3 -m workcraft setup_database_tables --read_from_env=False --db_password=test --drop_tables=True
 ```
 
 Then, to use workers, implement your worker code:
@@ -71,23 +71,23 @@ import time
 from multiprocessing import Pool
 
 from loguru import logger
-from workraft.core import Workraft
-from workraft.db import get_db_config
+from workcraft.core import workcraft
+from workcraft.db import get_db_config
 
 
-workraft = Workraft()
+workcraft = workcraft()
 
 global_counter = 0
 
 
-@workraft.setup_handler()
+@workcraft.setup_handler()
 def setup_handler():
     global global_counter
     global_counter = 1000
     logger.info("Setting up the worker!")
 
 
-@workraft.task("simple_task")
+@workcraft.task("simple_task")
 def simple_task(a: int, b: int, c: int) -> int:
     global global_counter
     global_counter += 1
@@ -97,7 +97,7 @@ def simple_task(a: int, b: int, c: int) -> int:
     return a + b + c
 
 
-@workraft.postrun_handler()
+@workcraft.postrun_handler()
 def postrun_handler(task_id, task_name, result, status):
     logger.info(
         f"Postrun handler called for {task_id} and {task_name}! Got result: {result} and status {status}"
@@ -110,7 +110,7 @@ def get_random_number():
     return random.randint(1, 100)
 
 
-@workraft.task("complex_task_1")
+@workcraft.task("complex_task_1")
 def parallel_task():
     num_processes = 8
     n_random_numbers = 20
@@ -129,7 +129,7 @@ async def main():
         b = random.randint(1, 100)
         c = random.randint(1, 100)
 
-        workraft.send_task_sync(
+        workcraft.send_task_sync(
             "simple_task",
             [a, b],
             task_kwargs={"c": c},
@@ -147,14 +147,14 @@ if __name__ == "__main__":
 To run a worker then, you would run:
 
 ```
-python3 -m workraft peon --workraft_path=example.workraft --worker-id=test1
+python3 -m workcraft peon --workcraft_path=example.workcraft --worker-id=test1
 ```
 
 If you then execute `example.py`, you will add a task into the queue and then see as the worker processes that task.
 
 ## Configuration
 
-If you have a `workraft.config.json` file, those settings will be used when setting up the tables as well as other, worker-related settings:
+If you have a `workcraft.config.json` file, those settings will be used when setting up the tables as well as other, worker-related settings:
 
 ```json
 

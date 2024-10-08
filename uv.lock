@@ -792,7 +792,7 @@ wheels = [
 ]
 
 [[package]]
-name = "workraft-3"
+name = "workcraft-3"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

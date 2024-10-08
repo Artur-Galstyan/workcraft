@@ -1,13 +1,13 @@
 import fire
-from workraft.utils import run_command
+from workcraft.utils import run_command
 
 
 def start_mysql_docker(
     db_port: int = 3306,
     db_user: str = "root",
-    db_name: str = "workraft",
+    db_name: str = "workcraft",
     db_password: str | None = None,
-    container_name: str = "workraft-mysql",
+    container_name: str = "workcraft-mysql",
     debug: bool = False,
     start_if_exists: bool = False,
 ):

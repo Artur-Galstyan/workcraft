@@ -5,8 +5,8 @@ from dotenv import load_dotenv
 from loguru import logger
 from sqlalchemy import create_engine, Engine, text
 
-from workraft.models import DBConfig, WorkerState
-from workraft.settings import settings
+from workcraft.models import DBConfig, WorkerState
+from workcraft.settings import settings
 
 
 class DBEngineSingleton:

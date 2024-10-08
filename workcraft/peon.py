@@ -1,22 +1,23 @@
 import asyncio
 import json
+import random
 
 from beartype.typing import Any
 from loguru import logger
 from pydantic import ValidationError
 from sqlalchemy import Connection, text
 
-from workraft.core import WorkerStateSingleton, Workraft
-from workraft.db import (
+from workcraft.core import workcraft, WorkerStateSingleton
+from workcraft.db import (
     DBEngineSingleton,
     update_worker_state_sync,
     verify_database_setup,
 )
-from workraft.models import DBConfig, Task, TaskStatus
-from workraft.settings import settings
+from workcraft.models import DBConfig, Task, TaskStatus
+from workcraft.settings import settings
 
 
-def dequeue_task(db_config: DBConfig, workraft: Workraft) -> Task | None:
+def dequeue_task(db_config: DBConfig, workcraft: workcraft) -> Task | None:
     def _mark_task_as_invalid(conn: Connection, task_id: str):
         logger.error(f"Marking task {task_id} as INVALID")
         statement = text("""
@@ -27,7 +28,7 @@ def dequeue_task(db_config: DBConfig, workraft: Workraft) -> Task | None:
         conn.execute(statement, {"id": task_id})
         conn.commit()
 
-    registered_tasks = workraft.tasks.keys()
+    registered_tasks = workcraft.tasks.keys()
     with DBEngineSingleton.get(db_config).connect() as conn:
         try:
             statement = text("""
@@ -76,26 +77,30 @@ def dequeue_task(db_config: DBConfig, workraft: Workraft) -> Task | None:
             return None
 
 
-async def run_peon(db_config: DBConfig, workraft: Workraft):
+async def run_peon(db_config: DBConfig, workcraft: workcraft):
     verify_database_setup(db_config)
     WorkerStateSingleton.update(status="IDLE", current_task=None)
     update_worker_state_sync(db_config, worker_state=WorkerStateSingleton.get())
 
     logger.info("Tasks:")
-    for name, _ in workraft.tasks.items():
+    for name, _ in workcraft.tasks.items():
         logger.info(f"- {name}")
 
     logger.info("Ready to work!")
 
     try:
         while True:
-            task = dequeue_task(db_config, workraft)
+            task = dequeue_task(db_config, workcraft)
             if task:
                 logger.info(f"Dequeued task: {task}")
-                await execute_task(db_config, task, workraft)
+                await execute_task(db_config, task, workcraft)
             else:
                 await asyncio.sleep(settings.DB_POLLING_INTERVAL)
-            await asyncio.sleep(settings.DB_POLLING_INTERVAL)
+            random_noise = random.normalvariate(
+                settings.DB_POLLING_INTERVAL_RANDOMNESS_MEAN,
+                settings.DB_POLLING_INTERVAL_RANDOMNESS_STDDEV,
+            )
+            await asyncio.sleep(settings.DB_POLLING_INTERVAL + random_noise)
     except asyncio.CancelledError:
         logger.info("Main loop cancelled. Shutting down...")
 
@@ -103,10 +108,10 @@ async def run_peon(db_config: DBConfig, workraft: Workraft):
 async def execute_task(
     db_config: DBConfig,
     task: Task,
-    workraft: Workraft,
+    workcraft: workcraft,
 ) -> None:
     try:
-        await execute_prerun_handler(workraft, task)
+        await execute_prerun_handler(workcraft, task)
     except Exception as e:
         logger.error(f"Prerun handler failed: {e}, continuing...")
 
@@ -114,7 +119,7 @@ async def execute_task(
     status = TaskStatus.RUNNING
 
     try:
-        result = await execute_main_task(workraft, task)
+        result = await execute_main_task(workcraft, task)
         logger.info(f"Task {task.payload.name} returned: {result}")
         status = TaskStatus.SUCCESS
     except Exception as e:
@@ -131,22 +136,22 @@ async def execute_task(
         WorkerStateSingleton.update(status="IDLE", current_task=None)
         update_worker_state_sync(db_config, WorkerStateSingleton.get())
     try:
-        await execute_postrun_handler(workraft, task)
+        await execute_postrun_handler(workcraft, task)
     except Exception as e:
         logger.error(f"Postrun handler failed: {e}")
 
 
-async def execute_prerun_handler(workraft: Workraft, task: Task) -> None:
-    if workraft.prerun_handler_fn is not None:
+async def execute_prerun_handler(workcraft: workcraft, task: Task) -> None:
+    if workcraft.prerun_handler_fn is not None:
         await execute_handler(
-            workraft.prerun_handler_fn,
+            workcraft.prerun_handler_fn,
             [task.id, task.payload.name] + task.payload.prerun_handler_args,
             task.payload.prerun_handler_kwargs,
         )
 
 
-async def execute_main_task(workraft: Workraft, task: Task) -> Any:
-    task_handler = workraft.tasks[task.payload.name]
+async def execute_main_task(workcraft: workcraft, task: Task) -> Any:
+    task_handler = workcraft.tasks[task.payload.name]
     if asyncio.iscoroutinefunction(task_handler):
         return await task_handler(
             task.id, *task.payload.task_args, **task.payload.task_kwargs
@@ -158,12 +163,12 @@ async def execute_main_task(workraft: Workraft, task: Task) -> Any:
 
 
 async def execute_postrun_handler(
-    workraft: Workraft,
+    workcraft: workcraft,
     task: Task,
 ) -> None:
-    if workraft.postrun_handler_fn is not None:
+    if workcraft.postrun_handler_fn is not None:
         await execute_handler(
-            workraft.postrun_handler_fn,
+            workcraft.postrun_handler_fn,
             [task.id, task.payload.name, task.result, task.status.value]
             + task.payload.postrun_handler_args,
             task.payload.postrun_handler_kwargs,

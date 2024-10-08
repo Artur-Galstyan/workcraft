@@ -10,17 +10,17 @@ import fire
 from loguru import logger
 from sqlalchemy import text
 
-from workraft.core import WorkerStateSingleton, Workraft
-from workraft.db import (
+from workcraft.core import workcraft, WorkerStateSingleton
+from workcraft.db import (
     DBConfig,
     DBEngineSingleton,
     get_db_config,
     send_heartbeat_sync,
     update_worker_state_sync,
 )
-from workraft.peon import run_peon
-from workraft.settings import settings
-from workraft.utils import import_module_attribute
+from workcraft.peon import run_peon
+from workcraft.settings import settings
+from workcraft.utils import import_module_attribute
 
 
 def signal_handler(signum, frame, db_config):
@@ -35,7 +35,7 @@ def signal_handler(signum, frame, db_config):
 class CLI:
     @staticmethod
     async def peon(
-        workraft_path: str,
+        workcraft_path: str,
         worker_id: str | None = None,
         queues: list[str] = ["DEFAULT"],
         load_db_config_from_env: bool = True,
@@ -43,7 +43,7 @@ class CLI:
         db_port: int = 3306,
         db_user: str = "root",
         db_password: str | None = None,
-        db_name: str = "workraft",
+        db_name: str = "workcraft",
     ):
         global shutdown_flag
 
@@ -65,11 +65,11 @@ class CLI:
         for sig in (signal.SIGTERM, signal.SIGINT):
             signal.signal(sig, signal_handler_partial)
 
-        logger.info(f"Getting Workraft object at {workraft_path}")
-        workraft_instance: Workraft = import_module_attribute(workraft_path)
+        logger.info(f"Getting workcraft object at {workcraft_path}")
+        workcraft_instance: workcraft = import_module_attribute(workcraft_path)
 
-        if workraft_instance.setup_handler_fn is not None:
-            workraft_instance.setup_handler_fn()
+        if workcraft_instance.setup_handler_fn is not None:
+            workcraft_instance.setup_handler_fn()
 
         worker_id = worker_id if worker_id is not None else str(uuid.uuid4())
 
@@ -83,7 +83,7 @@ class CLI:
             daemon=True,
         )
         heartbeat_task.start()
-        run_peon_task = asyncio.create_task(run_peon(db_config, workraft_instance))
+        run_peon_task = asyncio.create_task(run_peon(db_config, workcraft_instance))
         await asyncio.gather(run_peon_task, return_exceptions=True)
 
     @staticmethod
@@ -91,13 +91,13 @@ class CLI:
         db_host: str = "127.0.0.1",
         db_port: int = 3306,
         db_user: str = "root",
-        db_name: str = "workraft",
+        db_name: str = "workcraft",
         db_password: str | None = None,
         read_from_env: bool = True,
         drop_tables: bool = False,
     ):
         """
-        Sets up the database tables required for Workraft to function properly.
+        Sets up the database tables required for workcraft to function properly.
         If `read_from_env` is True, it will read the database configuration from the
         environment variables.
         Otherwise, you can provide the database configuration using the
@@ -115,7 +115,7 @@ class CLI:
         db_user : str, optional
             The username to connect to the database, by default "root"
         db_name : str, optional
-            The name of the database, by default "workraft"
+            The name of the database, by default "workcraft"
         db_password : str, optional
             The password to connect to the database, by default None, meaning you
             have to provide the password

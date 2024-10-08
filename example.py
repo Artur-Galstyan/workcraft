@@ -5,24 +5,24 @@ import time
 from multiprocessing import Pool
 
 from loguru import logger
-from workraft.core import Workraft
-from workraft.db import get_db_config
-from workraft.models import TaskPayload
+from workcraft.core import workcraft
+from workcraft.db import get_db_config
+from workcraft.models import TaskPayload
 
 
-workraft = Workraft()
+workcraft = workcraft()
 
 global_counter = 0
 
 
-@workraft.setup_handler()
+@workcraft.setup_handler()
 def setup_handler():
     global global_counter
     global_counter = 1000
     logger.info("Setting up the worker!")
 
 
-@workraft.task("simple_task")
+@workcraft.task("simple_task")
 def simple_task(task_id: str, a: int, b: int, c: int) -> int:
     print(task_id)
     global global_counter
@@ -33,7 +33,7 @@ def simple_task(task_id: str, a: int, b: int, c: int) -> int:
     return a + b + c
 
 
-@workraft.postrun_handler()
+@workcraft.postrun_handler()
 def postrun_handler(task_id, task_name, result, status):
     logger.info(
         f"Postrun handler called for {task_id} and {task_name}! Got result: {result} and status {status}"
@@ -48,7 +48,7 @@ async def main():
         b = random.randint(1, 100)
         c = random.randint(1, 100)
 
-        task_id = workraft.send_task_sync(
+        task_id = workcraft.send_task_sync(
             db_config=get_db_config(),
             payload=TaskPayload(
                 name="simple_task",
@@ -59,7 +59,7 @@ async def main():
     # await asyncio.sleep(5)
     # task_id = "7e1c5c4c-7d8c-4800-9c77-456a4e5fbe39"
     # logger.info(f"getting task for id {task_id}")
-    # task = Workraft.get_task_sync(get_db_config(), task_id)
+    # task = workcraft.get_task_sync(get_db_config(), task_id)
     # assert task is not None
     # assert task.result is not None
     # res = json.loads(task.result)
