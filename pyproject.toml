@@ -12,6 +12,7 @@ dependencies = [
     "fire>=0.7.0",
     "loguru>=0.7.2",
     "nox>=2024.4.15",
+    "pre-commit>=4.0.0",
     "pydantic>=2.9.2",
     "pymysql>=1.1.1",
     "python-dotenv>=1.0.1",
