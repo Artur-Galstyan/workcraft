@@ -32,13 +32,13 @@ def dequeue_task(db_config: DBConfig, workcraft: Workcraft) -> Task | None:
     with DBEngineSingleton.get(db_config).connect() as conn:
         try:
             statement = text("""
-                SELECT * FROM bountyboard
-                WHERE status = 'PENDING'
-                AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.name')) IN :registered_tasks
-                ORDER BY created_at ASC
-                LIMIT 1
-                FOR UPDATE
-            """)
+SELECT * FROM bountyboard
+WHERE status = 'PENDING' OR (status = 'FAILURE' AND retry_on_failure = TRUE AND retry_count < retry_limit)
+AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.name')) IN :registered_tasks
+ORDER BY created_at ASC
+LIMIT 1
+FOR UPDATE
+            """)  # noqa: E501
             result = conn.execute(
                 statement, {"registered_tasks": tuple(registered_tasks)}
             ).fetchone()
