@@ -3,12 +3,12 @@ import random
 import time
 
 from loguru import logger
-from workcraft.core import workcraft
+from workcraft.core import Workcraft
 from workcraft.db import get_db_config
 from workcraft.models import TaskPayload
 
 
-workcraft = workcraft()
+workcraft = Workcraft()
 
 global_counter = 0
 
