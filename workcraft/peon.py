@@ -33,7 +33,7 @@ def dequeue_task(db_config: DBConfig, workcraft: Workcraft) -> Task | None:
         try:
             statement = text("""
 SELECT * FROM bountyboard
-WHERE status = 'PENDING' OR (status = 'FAILURE' AND retry_on_failure = TRUE AND retry_count < retry_limit)
+WHERE status = 'PENDING' OR (status = 'FAILURE' AND retry_on_failure = TRUE AND retry_count <= retry_limit)
 AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.name')) IN :registered_tasks
 ORDER BY created_at ASC
 LIMIT 1
@@ -133,6 +133,9 @@ async def execute_task(
             update_task_status(conn, task.id, status, result)
         task.status = status
         task.result = result
+        task.retry_count = (
+            task.retry_count + 1 if status == TaskStatus.FAILURE else task.retry_count
+        )
         WorkerStateSingleton.update(status="IDLE", current_task=None)
         update_worker_state_sync(db_config, WorkerStateSingleton.get())
     try:
@@ -186,8 +189,6 @@ def update_task_status(
     conn: Connection, task_id: str, status: TaskStatus, result: Any | None
 ) -> None:
     try:
-        # increment retry_count by 1 if task failed
-
         if status == TaskStatus.FAILURE:
             conn.execute(
                 text(

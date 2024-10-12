@@ -27,7 +27,7 @@ def simple_task(task_id: str, a: int, b: int, c: int) -> int:
     global_counter += 1
     time.sleep(1)
     logger.info(global_counter)
-    # raise ValueError("Random error!")
+    raise ValueError("Random error!")
     return a + b + c
 
 
@@ -51,6 +51,7 @@ async def main():
                 name="simple_task",
                 task_args=[a, b, c],
             ),
+            retry_on_failure=True,
         )
 
     # await asyncio.sleep(5)
