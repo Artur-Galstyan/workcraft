@@ -186,16 +186,30 @@ def update_task_status(
     conn: Connection, task_id: str, status: TaskStatus, result: Any | None
 ) -> None:
     try:
-        conn.execute(
-            text(
-                "UPDATE bountyboard SET status = :status, result = :res WHERE id = :id"
-            ),
-            {
-                "status": status.value,
-                "res": result,
-                "id": task_id,
-            },
-        )
+        # increment retry_count by 1 if task failed
+
+        if status == TaskStatus.FAILURE:
+            conn.execute(
+                text(
+                    "UPDATE bountyboard SET status = :status, result = :res, retry_count = retry_count + 1 WHERE id = :id"  # noqa
+                ),
+                {
+                    "status": status.value,
+                    "res": result,
+                    "id": task_id,
+                },
+            )
+        else:
+            conn.execute(
+                text(
+                    "UPDATE bountyboard SET status = :status, result = :res WHERE id = :id"  # noqa
+                ),
+                {
+                    "status": status.value,
+                    "res": result,
+                    "id": task_id,
+                },
+            )
         conn.commit()
     except Exception as e:
         logger.error(f"Failed to update task {task_id} status to {status}: {e}")
