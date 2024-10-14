@@ -1,4 +1,6 @@
-# workcraft
+![zug-zug](https://github.com/user-attachments/assets/7c60873d-5c35-4cd3-985e-2b61e690c6f9)
+
+# Workcraft
 
 ## A simple, lightweight, database-only, worker library in Python
 
