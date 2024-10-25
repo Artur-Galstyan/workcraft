@@ -27,7 +27,6 @@ class DBConfig(BaseModel):
 
 
 class TaskPayload(BaseModel):
-    name: str
     task_args: list = Field(default_factory=list)
     task_kwargs: dict = Field(default_factory=dict)
     prerun_handler_args: list = Field(default_factory=list)
@@ -38,6 +37,7 @@ class TaskPayload(BaseModel):
 
 class Task(BaseModel):
     id: str
+    task_name: str
     status: TaskStatus
     created_at: datetime
     updated_at: datetime

@@ -34,7 +34,7 @@ def dequeue_task(db_config: DBConfig, workcraft: Workcraft) -> Task | None:
             statement = text("""
 SELECT * FROM bountyboard
 WHERE status = 'PENDING' OR (status = 'FAILURE' AND retry_on_failure = TRUE AND retry_count <= retry_limit)
-AND JSON_UNQUOTE(JSON_EXTRACT(payload, '$.name')) IN :registered_tasks
+AND task_name IN :registered_tasks
 ORDER BY created_at ASC
 LIMIT 1
 FOR UPDATE
@@ -120,14 +120,14 @@ async def execute_task(
 
     try:
         result = await execute_main_task(workcraft, task)
-        logger.info(f"Task {task.payload.name} returned: {result}")
+        logger.info(f"Task {task.task_name} returned: {result}")
         status = TaskStatus.SUCCESS
     except Exception as e:
-        logger.error(f"Task {task.payload.name} failed: {e}")
+        logger.error(f"Task {task.task_name} failed: {e}")
         status = TaskStatus.FAILURE
         result = str(e)
     finally:
-        logger.info(f"Task {task.payload.name} finished with status: {status}")
+        logger.info(f"Task {task.task_name} finished with status: {status}")
         with DBEngineSingleton.get(db_config).connect() as conn:
             result = json.dumps(result)
             update_task_status(conn, task.id, status, result)
@@ -148,13 +148,13 @@ async def execute_prerun_handler(workcraft: Workcraft, task: Task) -> None:
     if workcraft.prerun_handler_fn is not None:
         await execute_handler(
             workcraft.prerun_handler_fn,
-            [task.id, task.payload.name] + task.payload.prerun_handler_args,
+            [task.id, task.task_name] + task.payload.prerun_handler_args,
             task.payload.prerun_handler_kwargs,
         )
 
 
 async def execute_main_task(workcraft: Workcraft, task: Task) -> Any:
-    task_handler = workcraft.tasks[task.payload.name]
+    task_handler = workcraft.tasks[task.task_name]
     if asyncio.iscoroutinefunction(task_handler):
         return await task_handler(
             task.id, *task.payload.task_args, **task.payload.task_kwargs
@@ -172,7 +172,7 @@ async def execute_postrun_handler(
     if workcraft.postrun_handler_fn is not None:
         await execute_handler(
             workcraft.postrun_handler_fn,
-            [task.id, task.payload.name, task.result, task.status.value]
+            [task.id, task.task_name, task.result, task.status.value]
             + task.payload.postrun_handler_args,
             task.payload.postrun_handler_kwargs,
         )

@@ -78,24 +78,26 @@ class Workcraft:
     def send_task_sync(
         db_config: DBConfig,
         payload: TaskPayload,
+        task_name: str,
         queue: str = "DEFAULT",
         retry_on_failure: bool = False,
         retry_limit: int = 3,
     ) -> str:
         id = str(uuid.uuid4())
-        logger.info(f"Sending task {payload.name} to queue {queue} with id {id}")
+        logger.info(f"Sending task {task_name} to queue {queue} with id {id}")
         try:
             with DBEngineSingleton.get(db_config).connect() as conn:
                 statement = text(
                     """
-    INSERT INTO bountyboard (id, status, payload, queue, retry_on_failure, retry_limit)
-    VALUES (:id, 'PENDING', :payload, :queue, :retry_on_failure, :retry_limit)
-                    """
+INSERT INTO bountyboard (id, task_name, status, payload, queue, retry_on_failure, retry_limit)
+VALUES (:id, :task_name, 'PENDING', :payload, :queue, :retry_on_failure, :retry_limit)
+                    """  # noqa
                 )
                 conn.execute(
                     statement,
                     {
                         "id": id,
+                        "task_name": task_name,
                         "payload": payload.model_dump_json(),
                         "queue": queue,
                         "retry_on_failure": retry_on_failure,
