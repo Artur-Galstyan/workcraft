@@ -1,6 +1,4 @@
 import asyncio
-import random
-import time
 
 from loguru import logger
 from workcraft.core import Workcraft
@@ -21,14 +19,9 @@ def setup_handler():
 
 
 @workcraft.task("simple_task")
-def simple_task(task_id: str, a: int, b: int, c: int) -> int:
-    print(task_id)
-    global global_counter
-    global_counter += 1
-    time.sleep(1)
-    logger.info(global_counter)
-    raise ValueError("Random error!")
-    return a + b + c
+def simple_task(task_id: str, a: str) -> int:
+    print(task_id, len(a))
+    return 0
 
 
 @workcraft.postrun_handler()
@@ -38,18 +31,18 @@ def postrun_handler(task_id, task_name, result, status):
     )
 
 
+def generate_2mb_string():
+    return "a" * 1024 * 1024 * 2
+
+
 async def main():
     n_tasks = 1
     for _ in range(n_tasks):
-        a = random.randint(1, 100)
-        b = random.randint(1, 100)
-        c = random.randint(1, 100)
-
         workcraft.send_task_sync(
+            task_name="simple_task",
             db_config=get_db_config(),
             payload=TaskPayload(
-                name="simple_task",
-                task_args=[a, b, c],
+                task_args=[generate_2mb_string()],
             ),
             retry_on_failure=True,
         )

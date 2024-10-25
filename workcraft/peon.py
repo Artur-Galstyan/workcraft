@@ -18,7 +18,7 @@ from workcraft.settings import settings
 
 
 def dequeue_task(db_config: DBConfig, workcraft: Workcraft) -> Task | None:
-    def _mark_task_as_invalid(conn: Connection, task_id: str):
+    def mark_task_as_invalid(conn: Connection, task_id: str):
         logger.error(f"Marking task {task_id} as INVALID")
         statement = text("""
             UPDATE bountyboard
@@ -31,50 +31,67 @@ def dequeue_task(db_config: DBConfig, workcraft: Workcraft) -> Task | None:
     registered_tasks = workcraft.tasks.keys()
     with DBEngineSingleton.get(db_config).connect() as conn:
         try:
+            # First get just the ID of the row we want
             statement = text("""
-SELECT * FROM bountyboard
-WHERE status = 'PENDING' OR (status = 'FAILURE' AND retry_on_failure = TRUE AND retry_count <= retry_limit)
-AND task_name IN :registered_tasks
-ORDER BY created_at ASC
-LIMIT 1
-FOR UPDATE
-            """)  # noqa: E501
-            result = conn.execute(
+SELECT id FROM (
+    SELECT id
+    FROM bountyboard
+    WHERE status = 'PENDING'
+    OR (status = 'FAILURE' AND retry_on_failure = TRUE AND retry_count <= retry_limit)
+    AND task_name IN :registered_tasks
+    ORDER BY created_at ASC
+    LIMIT 1
+) AS t
+            """)
+            id_result = conn.execute(
                 statement, {"registered_tasks": tuple(registered_tasks)}
             ).fetchone()
+
+            if id_result:
+                # Then fetch the complete row using the ID
+                statement = text("""
+                    SELECT * FROM bountyboard
+                    WHERE id = :id
+                    FOR UPDATE
+                """)
+                result = conn.execute(statement, {"id": id_result[0]}).fetchone()
+
+                if result:
+                    resultdict = result._asdict()
+                    try:
+                        task = Task.from_db_data(resultdict)
+                        statement = text("""
+                            UPDATE bountyboard
+                            SET status = 'RUNNING',
+                                worker_id = :worker_id
+                            WHERE id = :id
+                        """)
+                        conn.execute(
+                            statement,
+                            {"id": task.id, "worker_id": WorkerStateSingleton.get().id},
+                        )
+                        conn.commit()
+                        WorkerStateSingleton.update(
+                            status="WORKING", current_task=task.id
+                        )
+                        update_worker_state_sync(
+                            db_config, worker_state=WorkerStateSingleton.get()
+                        )
+                        return task
+                    except ValidationError as e:
+                        logger.error(
+                            f"Error validating task: {e}. Invalid task: {resultdict}"
+                        )
+                        mark_task_as_invalid(conn, resultdict["id"])
+                        return None
+                    except Exception as e:
+                        logger.error(f"Error dequeuing task: {e}")
+                        mark_task_as_invalid(conn, resultdict["id"])
+                        return None
         except Exception as e:
             logger.error(f"Error querying task: {e}")
             return None
-        if result:
-            resultdict = result._asdict()
-            try:
-                task = Task.from_db_data(resultdict)
-                statement = text("""
-                    UPDATE bountyboard
-                    SET status = 'RUNNING',
-                        worker_id = :worker_id
-                    WHERE id = :id
-                """)
-                conn.execute(
-                    statement,
-                    {"id": task.id, "worker_id": WorkerStateSingleton.get().id},
-                )
-                conn.commit()
-                WorkerStateSingleton.update(status="WORKING", current_task=task.id)
-                update_worker_state_sync(
-                    db_config, worker_state=WorkerStateSingleton.get()
-                )
-                return task
-            except ValidationError as e:
-                logger.error(f"Error validating task: {e}. Invalid task: {resultdict}")
-                _mark_task_as_invalid(conn, resultdict["id"])
-                return None
-            except Exception as e:
-                logger.error(f"Error dequeuing task: {e}")
-                _mark_task_as_invalid(conn, resultdict["id"])
-                return None
-        else:
-            return None
+        return None
 
 
 async def run_peon(db_config: DBConfig, workcraft: Workcraft):
