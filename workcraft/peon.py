@@ -105,22 +105,38 @@ async def run_peon(db_config: DBConfig, workcraft: Workcraft):
 
     logger.info("Ready to work!")
 
-    try:
-        while True:
+    while True:  # Removed the try block from here
+        try:
             task = dequeue_task(db_config, workcraft)
             if task:
                 logger.info(f"Dequeued task: {task.task_name}, ID: {task.id}")
                 logger.debug(f"Task payload: {task.payload}")
-                await execute_task(db_config, task, workcraft)
-            else:
+                try:
+                    await execute_task(db_config, task, workcraft)
+                except Exception as e:
+                    logger.error(f"Task execution failed catastrophically: {e}")
+                    # Ensure worker state is reset even after catastrophic failure
+                    WorkerStateSingleton.update(status="IDLE", current_task=None)
+                    update_worker_state_sync(db_config, WorkerStateSingleton.get())
+            try:
                 await asyncio.sleep(settings.DB_POLLING_INTERVAL)
-            random_noise = random.normalvariate(
-                settings.DB_POLLING_INTERVAL_RANDOMNESS_MEAN,
-                settings.DB_POLLING_INTERVAL_RANDOMNESS_STDDEV,
-            )
-            await asyncio.sleep(settings.DB_POLLING_INTERVAL + random_noise)
-    except asyncio.CancelledError:
-        logger.info("Main loop cancelled. Shutting down...")
+                random_noise = random.normalvariate(
+                    settings.DB_POLLING_INTERVAL_RANDOMNESS_MEAN,
+                    settings.DB_POLLING_INTERVAL_RANDOMNESS_STDDEV,
+                )
+                await asyncio.sleep(settings.DB_POLLING_INTERVAL + random_noise)
+            except Exception as e:
+                logger.error(f"Error during sleep cycle: {e}")
+                # If sleep fails, add a simple delay to avoid tight loops
+                await asyncio.sleep(1)
+
+        except asyncio.CancelledError:
+            logger.info("Main loop cancelled. Shutting down...")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error in main loop: {e}")
+            # Add a small delay to avoid tight loops in case of persistent errors
+            await asyncio.sleep(1)
 
 
 async def execute_task(

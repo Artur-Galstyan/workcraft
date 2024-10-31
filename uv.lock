@@ -841,7 +841,7 @@ wheels = [
 
 [[package]]
 name = "workcraft"
-version = "0.5.16"
+version = "0.5.17"
 source = { editable = "." }
 dependencies = [
     { name = "aiomysql" },
