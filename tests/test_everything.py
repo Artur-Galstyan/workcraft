@@ -56,7 +56,7 @@ def test_everything():
         port=db_port, user=db_user, database=db_name, password=db_password, host=db_host
     )
     task_id = workcraft.send_task_sync(
-        db_config=db_config, payload=TaskPayload(name="add", task_args=[1, 2])
+        db_config=db_config, payload=TaskPayload(task_args=[1, 2]), task_name="add"
     )
 
     time.sleep(10)
