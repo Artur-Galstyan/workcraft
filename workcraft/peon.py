@@ -111,13 +111,7 @@ async def run_peon(db_config: DBConfig, workcraft: Workcraft):
             if task:
                 logger.info(f"Dequeued task: {task.task_name}, ID: {task.id}")
                 logger.debug(f"Task payload: {task.payload}")
-                try:
-                    await execute_task(db_config, task, workcraft)
-                except Exception as e:
-                    logger.error(f"Task execution failed catastrophically: {e}")
-                    # Ensure worker state is reset even after catastrophic failure
-                    WorkerStateSingleton.update(status="IDLE", current_task=None)
-                    update_worker_state_sync(db_config, WorkerStateSingleton.get())
+                await execute_task(db_config, task, workcraft)
             try:
                 await asyncio.sleep(settings.DB_POLLING_INTERVAL)
                 random_noise = random.normalvariate(
@@ -129,7 +123,6 @@ async def run_peon(db_config: DBConfig, workcraft: Workcraft):
                 logger.error(f"Error during sleep cycle: {e}")
                 # If sleep fails, add a simple delay to avoid tight loops
                 await asyncio.sleep(1)
-
         except asyncio.CancelledError:
             logger.info("Main loop cancelled. Shutting down...")
             raise
@@ -160,6 +153,7 @@ async def execute_task(
         logger.error(f"Task {task.task_name} failed: {e}")
         status = TaskStatus.FAILURE
         result = str(e)
+        raise e
     finally:
         logger.info(f"Task {task.task_name} finished with status: {status}")
         with DBEngineSingleton.get(db_config).connect() as conn:
