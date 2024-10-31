@@ -109,7 +109,8 @@ async def run_peon(db_config: DBConfig, workcraft: Workcraft):
         while True:
             task = dequeue_task(db_config, workcraft)
             if task:
-                logger.info(f"Dequeued task: {task}")
+                logger.info(f"Dequeued task: {task.task_name}, ID: {task.id}")
+                logger.debug(f"Task payload: {task.payload}")
                 await execute_task(db_config, task, workcraft)
             else:
                 await asyncio.sleep(settings.DB_POLLING_INTERVAL)
@@ -137,7 +138,7 @@ async def execute_task(
 
     try:
         result = await execute_main_task(workcraft, task)
-        logger.info(f"Task {task.task_name} returned: {result}")
+        logger.debug(f"Task {task.task_name} returned: {result}")
         status = TaskStatus.SUCCESS
     except Exception as e:
         logger.error(f"Task {task.task_name} failed: {e}")
