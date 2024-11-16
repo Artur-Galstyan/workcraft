@@ -31,12 +31,31 @@ def get_db_config() -> DBConfig:
     user = os.getenv("WK_DB_USER", None)
     pswd = os.getenv("WK_DB_PASS", None)
     name = os.getenv("WK_DB_NAME", None)
+    use_ssl = os.getenv("WK_DB_USE_SSL", None)
+    ssl_path = os.getenv("WK_DB_SSL_PATH", None)
+
     assert host, "WK_DB_HOST is not set"
     assert port, "WK_DB_PORT is not set"
     assert user, "WK_DB_USER is not set"
     assert pswd, "WK_DB_PASS is not set"
     assert name, "WK_DB_NAME is not set"
-    return DBConfig(host=host, port=int(port), user=user, password=pswd, database=name)
+
+    if use_ssl is None:
+        use_ssl = False
+    else:
+        use_ssl = use_ssl.lower() == "true"
+
+    if use_ssl:
+        assert ssl_path, "WK_DB_SSL_PATH is not set"
+    return DBConfig(
+        host=host,
+        port=int(port),
+        user=user,
+        password=pswd,
+        database=name,
+        use_ssl=use_ssl,
+        ssl_path=ssl_path,
+    )
 
 
 def update_worker_state_sync(db_config: DBConfig, worker_state: WorkerState):

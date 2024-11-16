@@ -3,6 +3,7 @@ from datetime import datetime
 from enum import Enum
 
 from beartype.typing import Any, Literal, Protocol
+from loguru import logger
 from pydantic import BaseModel, Field
 
 
@@ -20,10 +21,20 @@ class DBConfig(BaseModel):
     user: str
     password: str
     database: str
+    use_ssl: bool = False
+    ssl_path: str | None = None
 
     @staticmethod
     def get_uri(db_config: "DBConfig") -> str:
-        return f"mysql+pymysql://{db_config.user}:{db_config.password}@{db_config.host}:{db_config.port}/{db_config.database}"
+        conn_string = f"mysql+pymysql://{db_config.user}:{db_config.password}@{db_config.host}:{db_config.port}/{db_config.database}"
+        if db_config.use_ssl:
+            conn_string += "?ssl=true"
+            if db_config.ssl_path:
+                conn_string += f"&ssl_ca={db_config.ssl_path}"
+            else:
+                raise ValueError("ssl_path is required when use_ssl is True")
+        logger.info(f"DB connection string: {conn_string}")
+        return conn_string
 
 
 class TaskPayload(BaseModel):

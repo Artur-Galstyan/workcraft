@@ -33,6 +33,8 @@ WK_DB_PORT=3306
 WK_DB_USER="root"
 WK_DB_PASS="workcraft"
 WK_DB_NAME="workcraft"
+WK_DB_USE_SSL=
+WK_DB_SSL_PATH=
 ```
 
 (Adjust to your settings of course)
@@ -52,6 +54,8 @@ def setup_database_tables(
     db_user: str = "root",
     db_name: str = "workcraft",
     db_password: str | None = None,
+    db_use_ssl: bool = False,
+    db_ssl_path: str | None = None,
     read_from_env: bool = True,
     drop_tables: bool = False,
 ):
@@ -174,12 +178,19 @@ If you have a `workcraft.config.json` file, those settings will be used when set
 
 
 DB_PEON_HEARTBEAT_INTERVAL: This is the interval at which the peon sends a heartbeat to the database.
+
 DB_POLLING_INTERVAL: This is the interval at which the peon polls the database for new tasks.
+
 DB_SETUP_BACKOFF_MULTIPLIER_SECONDS: This is the multiplier for the exponential backoff algorithm.
+
 DB_SETUP_BACKOFF_MAX_SECONDS: This is the maximum backoff time for the exponential backoff algorithm.
+
 DB_SETUP_RUN_SELF_CORRECT_TASK_INTERVAL: This is the interval at which the database runs the self-correct task.
+
 DB_SETUP_RUN_REOPEN_FAILED_TASK_INTERVAL: This is the interval at which the database reopens failed tasks.
+
 DB_SETUP_WAIT_TIME_BEFORE_WORKER_DECLARED_DEAD: This is the time the database waits before declaring a worker dead.
+
 DB_SETUP_CHECK_DEAD_WORKER_INTERVAL: This is the interval at which the database checks for dead workers.
 
 The configs with `DB_SETUP_` in the beginning are only used during the setup of the database. In other words, they are only used once. The first two are using during runtime.

@@ -44,6 +44,7 @@ class CLI:
         db_user: str = "root",
         db_password: str | None = None,
         db_name: str = "workcraft",
+        db_use_ssl: bool = False,
     ):
         global shutdown_flag
 
@@ -60,6 +61,7 @@ class CLI:
                 user=db_user,
                 password=db_password,
                 database=db_name,
+                use_ssl=db_use_ssl,
             )
         signal_handler_partial = functools.partial(signal_handler, db_config=db_config)
         for sig in (signal.SIGTERM, signal.SIGINT):
@@ -93,6 +95,8 @@ class CLI:
         db_user: str = "root",
         db_name: str = "workcraft",
         db_password: str | None = None,
+        db_use_ssl: bool = False,
+        db_ssl_path: str | None = None,
         read_from_env: bool = True,
         drop_tables: bool = False,
     ):
@@ -137,12 +141,32 @@ class CLI:
                 user=db_user,
                 password=db_password,
                 database=db_name,
+                use_ssl=db_use_ssl,
+                ssl_path=db_ssl_path,
             )
         sqls_dir = pathlib.Path(__file__).parent / "sqls"
         sql_files = sorted(sqls_dir.glob("*.sql"))
         with DBEngineSingleton.get(db_config).connect() as conn:
-            conn.execute(text("SET GLOBAL log_bin_trust_function_creators = 1;"))
-            conn.execute(text("SET GLOBAL event_scheduler = ON;"))
+            # check if this settings is already set
+            # if not, set it
+
+            res = conn.execute(
+                text("SHOW VARIABLES LIKE 'log_bin_trust_function_creators';")
+            )
+            row = res.fetchone()
+            if row is None:
+                logger.info("Setting log_bin_trust_function_creators to 1")
+                conn.execute(text("SET GLOBAL log_bin_trust_function_creators = 1;"))
+            else:
+                logger.info("log_bin_trust_function_creators is already set")
+
+            res = conn.execute(text("SHOW VARIABLES LIKE 'event_scheduler';"))
+            row = res.fetchone()
+            if row is None:
+                logger.info("Setting event_scheduler to ON")
+                conn.execute(text("SET GLOBAL event_scheduler = ON;"))
+            else:
+                logger.info("event_scheduler is already set")
 
             if drop_tables:
                 drops = [
