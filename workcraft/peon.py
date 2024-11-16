@@ -1,6 +1,7 @@
 import asyncio
 import json
 import random
+import traceback
 
 from beartype.typing import Any
 from loguru import logger
@@ -128,6 +129,7 @@ async def run_peon(db_config: DBConfig, workcraft: Workcraft):
             raise
         except Exception as e:
             logger.error(f"Unexpected error in main loop: {e}")
+            logger.error(traceback.format_exc())
             # Add a small delay to avoid tight loops in case of persistent errors
             await asyncio.sleep(1)
 
@@ -151,9 +153,9 @@ async def execute_task(
         status = TaskStatus.SUCCESS
     except Exception as e:
         logger.error(f"Task {task.task_name} failed: {e}")
+        logger.error(traceback.format_exc())
         status = TaskStatus.FAILURE
         result = str(e)
-        raise e
     finally:
         logger.info(f"Task {task.task_name} finished with status: {status}")
         with DBEngineSingleton.get(db_config).connect() as conn:
@@ -166,10 +168,11 @@ async def execute_task(
         )
         WorkerStateSingleton.update(status="IDLE", current_task=None)
         update_worker_state_sync(db_config, WorkerStateSingleton.get())
-    try:
-        await execute_postrun_handler(workcraft, task)
-    except Exception as e:
-        logger.error(f"Postrun handler failed: {e}")
+        try:
+            await execute_postrun_handler(workcraft, task)
+        except Exception as e:
+            logger.error(f"Postrun handler failed: {e}")
+            logger.error(traceback.format_exc())
 
 
 async def execute_prerun_handler(workcraft: Workcraft, task: Task) -> None:
