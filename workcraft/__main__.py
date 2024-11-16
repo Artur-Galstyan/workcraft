@@ -123,6 +123,10 @@ class CLI:
         db_password : str, optional
             The password to connect to the database, by default None, meaning you
             have to provide the password
+        db_use_ssl : bool, optional
+            Whether to use SSL to connect to the database, by default False
+        db_ssl_path : str, optional
+            The path to the SSL certificates, by default None
         read_from_env : bool, optional
             Whether to read the database configuration from the environment variables,
             by default True
@@ -154,7 +158,11 @@ class CLI:
                 text("SHOW VARIABLES LIKE 'log_bin_trust_function_creators';")
             )
             row = res.fetchone()
-            if row is None:
+            if row is not None:
+                row = row._asdict()
+                logger.info(f"log_bin_trust_function_creators: {row}")
+
+            if row is not None and row["Value"] == "OFF":
                 logger.info("Setting log_bin_trust_function_creators to 1")
                 conn.execute(text("SET GLOBAL log_bin_trust_function_creators = 1;"))
             else:
@@ -162,7 +170,11 @@ class CLI:
 
             res = conn.execute(text("SHOW VARIABLES LIKE 'event_scheduler';"))
             row = res.fetchone()
-            if row is None:
+            if row is not None:
+                row = row._asdict()
+                logger.info(f"event_scheduler: {row}")
+
+            if row is not None and row["Value"] == "OFF":
                 logger.info("Setting event_scheduler to ON")
                 conn.execute(text("SET GLOBAL event_scheduler = ON;"))
             else:

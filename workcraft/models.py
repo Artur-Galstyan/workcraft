@@ -3,7 +3,6 @@ from datetime import datetime
 from enum import Enum
 
 from beartype.typing import Any, Literal, Protocol
-from loguru import logger
 from pydantic import BaseModel, Field
 
 
@@ -33,7 +32,7 @@ class DBConfig(BaseModel):
                 conn_string += f"&ssl_ca={db_config.ssl_path}"
             else:
                 raise ValueError("ssl_path is required when use_ssl is True")
-        logger.info(f"DB connection string: {conn_string}")
+
         return conn_string
 
 
